@@ -1,5 +1,6 @@
 import { noop } from "lodash";
 import dotenv from "dotenv";
+import { execSync } from "child_process";
 import { ASRServer, ImageGenerationServer, LLMServer, TTSServer } from "../type";
 import { recognizeAudio as VolcengineASR } from "./volcengine-asr";
 import {
@@ -39,17 +40,27 @@ import piperTTS from "./piper-tts";
 
 dotenv.config();
 
+function isOnlineSync(): boolean {
+  try {
+    execSync("ping -c 1 -W 1 1.1.1.1 >/dev/null 2>&1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+
 let recognizeAudio: RecognizeAudioFunction = noop as any;
 let chatWithLLMStream: ChatWithLLMStreamFunction = noop as any;
 let ttsProcessor: TTSProcessorFunction = noop as any;
 let resetChatHistory: ResetChatHistoryFunction = noop as any;
 
-export const asrServer: ASRServer = (
-  process.env.ASR_SERVER || ASRServer.tencent
-).toLowerCase() as ASRServer;
-export const llmServer: LLMServer = (
-  process.env.LLM_SERVER || LLMServer.volcengine
-).toLowerCase() as LLMServer;
+const envAsr = (process.env.ASR_SERVER || ASRServer.tencent).toLowerCase() as ASRServer;
+const envLlm = (process.env.LLM_SERVER || LLMServer.volcengine).toLowerCase() as LLMServer;
+const online = isOnlineSync();
+
+export const asrServer: ASRServer = (online ? ASRServer.openai : envAsr);
+export const llmServer: LLMServer = (online ? LLMServer.openai : envLlm);
 export const ttsServer: TTSServer = (
   process.env.TTS_SERVER || TTSServer.volcengine
 ).toLowerCase() as TTSServer;

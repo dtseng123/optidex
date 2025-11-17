@@ -1,8 +1,50 @@
 #!/bin/bash
+set -euo pipefail
+
+# PID file location
+PIDFILE="/tmp/whisplay_chatbot.pid"
+
+# Check if already running
+if [ -f "$PIDFILE" ]; then
+  OLD_PID=$(cat "$PIDFILE")
+  # Check if the process is actually running
+  if ps -p "$OLD_PID" > /dev/null 2>&1; then
+    echo "ERROR: Chatbot is already running (PID: $OLD_PID)"
+    echo "If you're sure it's not running, remove $PIDFILE and try again"
+    exit 1
+  else
+    echo "Found stale PID file, removing..."
+    rm -f "$PIDFILE"
+  fi
+fi
+
+# Write our PID
+echo $$ > "$PIDFILE"
+
+# Cleanup function to remove PID file on exit
+cleanup() {
+  rm -f "$PIDFILE"
+  echo "Cleaning up after service..."
+  
+  if [ "$serve_ollama" = true ]; then
+    echo "Stopping Ollama server..."
+    pkill ollama || true
+  fi
+  
+  echo "===== Service ended: $(date) ====="
+}
+
+# Set trap to cleanup on exit
+trap cleanup EXIT
+
 # Set working directory
-export NVM_DIR="/home/pi/.nvm"
+export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+# Bluetooth/Pulse audio routing env
+. "/home/dash/whisplay-ai-chatbot/.bluetooth_audio_env.sh"
+
 
 # Find the sound card index for wm8960soundcard
 card_index=$(awk '/wm8960soundcard/ {print $1}' /proc/asound/cards | head -n1)
@@ -53,15 +95,7 @@ if [ "$serve_ollama" = true ]; then
   ollama serve &
 fi
 
-SOUND_CARD_INDEX=$card_index yarn start
+exit_code=0
+SOUND_CARD_INDEX="$card_index" yarn start || exit_code=$?
 
-# After the service ends, perform cleanup
-echo "Cleaning up after service..."
-
-if [ "$serve_ollama" = true ]; then
-  echo "Stopping Ollama server..."
-  pkill ollama
-fi
-
-# Record end status
-echo "===== Service ended: $(date) ====="
+exit $exit_code

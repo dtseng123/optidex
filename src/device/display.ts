@@ -1,7 +1,8 @@
-import { exec } from "child_process";
+import { exec, execSync } from "child_process";
 import { resolve } from "path";
 import { Socket } from "net";
 import { getCurrentTimeTag } from "../utils";
+import { isVisualModeActive } from "../utils/image";
 
 interface Status {
   status: string;
@@ -29,6 +30,25 @@ const autoCropText = (text: string): string => {
   // return sentences.join(" ") + remaining;
 };
 
+function isOnlineSync(): boolean {
+  try {
+    execSync("ping -c 1 -W 1 1.1.1.1 >\/dev\/null 2>&1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function modeIcon(): string {
+  return isOnlineSync() ? "🛜" : "💻";
+}
+
+function withModeEmoji(e?: string): string | undefined {
+  if (!e) return e;
+  return e.replace(/\s[🛜💻]$/, "") + " " + modeIcon();
+}
+
+
 export class WhisplayDisplay {
   private currentStatus: Status = {
     status: "starting",
@@ -49,6 +69,8 @@ export class WhisplayDisplay {
   private pythonProcess: any; // Placeholder for Python process if needed
 
   constructor() {
+    // Ensure default emoji includes the current mode icon
+    this.currentStatus.emoji = withModeEmoji(this.currentStatus.emoji) as string;
     this.startPythonProcess();
     this.isReady = new Promise<void>((resolve) => {
       this.connectWithRetry(15, resolve);
@@ -59,7 +81,7 @@ export class WhisplayDisplay {
     const command = `cd ${resolve(
       __dirname,
       "../../python"
-    )} && python3 chatbot-ui.py`;
+    )} && sudo python3 chatbot-ui.py`;
     console.log("Starting Python process...");
     this.pythonProcess = exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -81,7 +103,7 @@ export class WhisplayDisplay {
     if (this.pythonProcess) {
       console.log("Killing Python process...", this.pythonProcess.pid);
       this.pythonProcess.kill();
-      process.kill(this.pythonProcess.pid, "SIGKILL");
+      // process.kill(this.pythonProcess.pid, "SIGKILL");
       this.pythonProcess = null;
     }
   }
@@ -182,6 +204,9 @@ export class WhisplayDisplay {
     if (newStatus.text) {
       newStatus.text = autoCropText(newStatus.text);
     }
+    if (typeof newStatus.emoji !== "undefined") {
+      newStatus.emoji = withModeEmoji(newStatus.emoji) as string;
+    }
     const {
       status,
       emoji,
@@ -196,8 +221,16 @@ export class WhisplayDisplay {
       ...newStatus,
     };
 
+    // During visual mode, ALWAYS include 'image' in changedValues even if path didn't change
+    // This forces the Python side to reload the image file every frame
     const changedValues = Object.entries(newStatus).filter(
-      ([key, value]) => (this.currentStatus as any)[key] !== value
+      ([key, value]) => {
+        // Special case: during visual mode, always consider 'image' as changed
+        if (key === "image" && isVisualModeActive() && value) {
+          return true;
+        }
+        return (this.currentStatus as any)[key] !== value;
+      }
     );
 
     const isTextChanged = changedValues.some(([key]) => key === "text");

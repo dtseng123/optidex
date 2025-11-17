@@ -6,6 +6,8 @@ import { ttsServer, asrServer } from "../cloud-api/server";
 import { ASRServer, TTSServer } from "../type";
 
 dotenv.config();
+const ALSA_INPUT_DEVICE = process.env.AUDIO_INPUT_DEVICE || "default";
+const ALSA_OUTPUT_DEVICE = process.env.AUDIO_OUTPUT_DEVICE || "default";
 
 const useWavPlayer = [TTSServer.gemini, TTSServer.piper].includes(ttsServer);
 export const recordFileFormat = [ASRServer.vosk, ASRServer.whisper].includes(asrServer)
@@ -14,7 +16,7 @@ export const recordFileFormat = [ASRServer.vosk, ASRServer.whisper].includes(asr
 
 function startPlayerProcess() {
   if (useWavPlayer) {
-    return spawn("aplay", [
+    return spawn("aplay", ["-D", ALSA_OUTPUT_DEVICE, 
       "-f",
       "S16_LE", // 16-bit PCM
       "-r",
@@ -24,7 +26,7 @@ function startPlayerProcess() {
       "-", // read from stdin
     ]);
   } else {
-    return spawn("mpg123", ["-", "--scale", "2", "-o", "alsa"]);
+    return spawn("mpg123", ["-o", "alsa", "-a", ALSA_OUTPUT_DEVICE, "-", "--scale", "2"]);
   }
 }
 
@@ -47,7 +49,7 @@ const recordAudio = (
   duration: number = 10
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
-    const cmd = `sox -t alsa default -t ${recordFileFormat} ${outputPath} silence 1 0.1 60% 1 1.0 60%`;
+    const cmd = `sox -t alsa ${ALSA_INPUT_DEVICE} -t ${recordFileFormat} ${outputPath} silence 1 0.1 60% 1 1.0 60%`;
     console.log(`Starting recording, maximum ${duration} seconds...`);
     const recordingProcess = exec(cmd, (err, stdout, stderr) => {
       currentRecordingReject = reject;
@@ -78,7 +80,7 @@ const recordAudioManually = (
   const result = new Promise<string>((resolve, reject) => {
     currentRecordingReject = reject;
     const recordingProcess = exec(
-      `sox -t alsa default -t ${recordFileFormat} ${outputPath}`,
+      `sox -t alsa ${ALSA_INPUT_DEVICE} -t ${recordFileFormat} ${outputPath}`,
       (err, stdout, stderr) => {
         if (err) {
           killAllRecordingProcesses();

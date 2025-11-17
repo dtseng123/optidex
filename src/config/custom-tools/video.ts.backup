@@ -1,0 +1,444 @@
+import { LLMTool } from "../../type";
+import { exec, spawn, ChildProcess } from "child_process";
+import { promisify } from "util";
+import path from "path";
+import { setVideoPlaybackMarker, clearVideoPlayback, setVideoRecordingActive } from "../../utils/image";
+import { display } from "../../device/display";
+import fs from "fs";
+
+const execAsync = promisify(exec);
+
+// Paths
+const VIDEO_DIR = path.join(__dirname, "../../../data/videos");
+const VIDEO_CAPTURE_SCRIPT = path.join(__dirname, "../../../python/video_capture.py");
+const VIDEO_PLAYER_SCRIPT = path.join(__dirname, "../../../python/video_player_lcd.py");
+const PREVIEW_BASE = "/tmp/whisplay_video_preview";
+const PREVIEW_LATEST = "/tmp/whisplay_video_preview_latest.jpg";
+const VIDEO_FRAME_PATH = "/tmp/whisplay_current_video_frame.jpg";
+
+// Ensure video directory exists
+if (!fs.existsSync(VIDEO_DIR)) {
+  fs.mkdirSync(VIDEO_DIR, { recursive: true });
+}
+
+// Global state for active recording
+let activeRecordingProcess: ChildProcess | null = null;
+let activeRecordingPath: string | null = null;
+let previewUpdateInterval: NodeJS.Timeout | null = null;
+
+// Global state for video playback
+let playbackUpdateInterval: NodeJS.Timeout | null = null;
+
+const videoTools: LLMTool[] = [
+  // Record video for specific duration
+  {
+    type: "function",
+    function: {
+      name: "recordVideoForDuration",
+      description: "Record a video for a specific number of seconds",
+      parameters: {
+        type: "object",
+        properties: {
+          duration: {
+            type: "number",
+            description: "Duration in seconds to record (e.g., 5, 10, 30)",
+          },
+        },
+        required: ["duration"],
+      },
+    },
+    func: async (params) => {
+      try {
+        const { duration } = params;
+        
+        if (!duration || duration <= 0 || duration > 300) {
+          return "[error]Duration must be between 1 and 300 seconds.";
+        }
+
+        const fileName = `video-${Date.now()}.h264`;
+        const videoPath = path.join(VIDEO_DIR, fileName);
+
+        console.log(`Recording video for ${duration} seconds: ${videoPath}`);
+
+        // Mark video recording as active to prevent TTS from overwriting display
+        setVideoRecordingActive(true);
+
+        // Start updating display with live preview
+        // Check both rotating frames to ensure we catch updates
+        let lastFrameNum = 0;
+        previewUpdateInterval = setInterval(() => {
+          // Try to use the latest symlink first (most reliable)
+          if (fs.existsSync(PREVIEW_LATEST)) {
+            display({
+              RGB: "#FF0000", // Red
+              image: PREVIEW_LATEST,
+            });
+          } else {
+            // Fallback: check both rotating frames
+            const frame0 = `${PREVIEW_BASE}_0.jpg`;
+            const frame1 = `${PREVIEW_BASE}_1.jpg`;
+            
+            // Alternate between checking both frames
+            const checkFrame = lastFrameNum === 0 ? frame1 : frame0;
+            if (fs.existsSync(checkFrame)) {
+              display({
+                RGB: "#FF0000", // Red
+                image: checkFrame,
+              });
+              lastFrameNum = 1 - lastFrameNum; // Toggle
+            }
+          }
+        }, 150); // Update every 150ms to match capture rate
+
+        // Record video with specified duration
+        const command = `python3 ${VIDEO_CAPTURE_SCRIPT} ${videoPath} ${duration} 1280 720 30`;
+
+        await execAsync(command, { timeout: (duration + 5) * 1000 });
+
+        // Stop preview updates
+        if (previewUpdateInterval) {
+          clearInterval(previewUpdateInterval);
+          previewUpdateInterval = null;
+        }
+
+        // Clear recording state
+        setVideoRecordingActive(false);
+
+        // Clear preview from display
+        display({
+          RGB: "#00c8a3", // Back to normal
+          emoji: "✅",
+          text: "Recording complete!",
+          image: "",
+        });
+
+        // Verify the file was created
+        if (!fs.existsSync(videoPath)) {
+          console.error("Video file was not created");
+          return "[error]Failed to record video.";
+        }
+
+        const fileSizeBytes = fs.statSync(videoPath).size;
+        const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+
+        console.log(`Video recorded successfully: ${videoPath} (${fileSizeMB}MB)`);
+        
+        // Store the path for playback
+        activeRecordingPath = videoPath;
+
+        return `[success]Video recorded for ${duration} seconds (${fileSizeMB}MB). Ready to play.`;
+      } catch (error: any) {
+        console.error("Error recording video:", error);
+        return `[error]Failed to record video: ${error.message}`;
+      }
+    },
+  },
+
+  // Start continuous recording
+  {
+    type: "function",
+    function: {
+      name: "startVideoRecording",
+      description: "Start recording a video continuously until explicitly stopped by the user",
+      parameters: {},
+    },
+    func: async (params) => {
+      try {
+        // Check if already recording
+        if (activeRecordingProcess) {
+          return "[error]Already recording. Please stop current recording first.";
+        }
+
+        const fileName = `video-${Date.now()}.h264`;
+        const videoPath = path.join(VIDEO_DIR, fileName);
+
+        console.log(`Starting continuous video recording: ${videoPath}`);
+
+        // Mark video recording as active to prevent TTS from overwriting display
+        setVideoRecordingActive(true);
+
+        // Start recording process in background
+        activeRecordingProcess = spawn("python3", [
+          VIDEO_CAPTURE_SCRIPT,
+          videoPath,
+        ]);
+
+        // Start updating display with live preview
+        // Check both rotating frames to ensure we catch updates
+        let lastFrameNum = 0;
+        previewUpdateInterval = setInterval(() => {
+          // Try to use the latest symlink first (most reliable)
+          if (fs.existsSync(PREVIEW_LATEST)) {
+            display({
+              RGB: "#FF0000", // Red
+              image: PREVIEW_LATEST,
+            });
+          } else {
+            // Fallback: check both rotating frames
+            const frame0 = `${PREVIEW_BASE}_0.jpg`;
+            const frame1 = `${PREVIEW_BASE}_1.jpg`;
+            
+            // Alternate between checking both frames
+            const checkFrame = lastFrameNum === 0 ? frame1 : frame0;
+            if (fs.existsSync(checkFrame)) {
+              display({
+                RGB: "#FF0000", // Red
+                image: checkFrame,
+              });
+              lastFrameNum = 1 - lastFrameNum; // Toggle
+            }
+          }
+        }, 150); // Update every 150ms to match capture rate
+
+        activeRecordingPath = videoPath;
+
+        // Handle process events
+        activeRecordingProcess.on("error", (error) => {
+          console.error("Recording process error:", error);
+          activeRecordingProcess = null;
+        });
+
+        activeRecordingProcess.on("exit", (code) => {
+          console.log(`Recording process exited with code ${code}`);
+          if (code !== 0 && code !== null) {
+            console.error("Recording failed");
+          }
+          activeRecordingProcess = null;
+        });
+
+        // Wait a moment to ensure recording started
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        return "[success]Video recording started. Say 'stop recording' when done.";
+      } catch (error: any) {
+        console.error("Error starting video recording:", error);
+        activeRecordingProcess = null;
+        return `[error]Failed to start recording: ${error.message}`;
+      }
+    },
+  },
+
+  // Stop continuous recording
+  {
+    type: "function",
+    function: {
+      name: "stopVideoRecording",
+      description: "Stop the current continuous video recording",
+      parameters: {},
+    },
+    func: async (params) => {
+      try {
+        if (!activeRecordingProcess) {
+          return "[error]No active recording to stop.";
+        }
+
+        console.log("Stopping video recording...");
+
+        // Send SIGTERM to gracefully stop recording
+        activeRecordingProcess.kill("SIGTERM");
+
+        // Wait for process to exit
+        await new Promise((resolve) => {
+          if (activeRecordingProcess) {
+            activeRecordingProcess.on("exit", resolve);
+            // Timeout after 3 seconds
+            setTimeout(resolve, 3000);
+          } else {
+            resolve(null);
+          }
+        });
+
+        activeRecordingProcess = null;
+
+        // Stop preview updates
+        if (previewUpdateInterval) {
+          clearInterval(previewUpdateInterval);
+          previewUpdateInterval = null;
+        }
+
+        // Clear recording state
+        setVideoRecordingActive(false);
+
+        // Clear preview from display
+        display({
+          RGB: "#00c8a3",
+          emoji: "✅",
+          text: "Recording stopped!",
+          image: "",
+        });
+
+        // Check if file was created
+        if (activeRecordingPath && fs.existsSync(activeRecordingPath)) {
+          const fileSizeBytes = fs.statSync(activeRecordingPath).size;
+          const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+
+          console.log(`Video saved: ${activeRecordingPath} (${fileSizeMB}MB)`);
+          return `[success]Recording stopped. Video saved (${fileSizeMB}MB). Ready to play.`;
+        } else {
+          return "[error]Recording stopped but video file not found.";
+        }
+      } catch (error: any) {
+        console.error("Error stopping video recording:", error);
+        activeRecordingProcess = null;
+        return `[error]Failed to stop recording: ${error.message}`;
+      }
+    },
+  },
+
+  // Play the most recent video
+  {
+    type: "function",
+    function: {
+      name: "playVideo",
+      description: "Play the most recently recorded video on the display",
+      parameters: {},
+    },
+    func: async (params) => {
+      try {
+        // Use the last recorded video or find the most recent one
+        let videoPath = activeRecordingPath;
+
+        if (!videoPath || !fs.existsSync(videoPath)) {
+          // Find most recent video in directory
+          const files = fs
+            .readdirSync(VIDEO_DIR)
+            .filter((f) => f.endsWith(".h264") || f.endsWith(".mp4"))
+            .map((f) => ({
+              name: f,
+              path: path.join(VIDEO_DIR, f),
+              time: fs.statSync(path.join(VIDEO_DIR, f)).mtime.getTime(),
+            }))
+            .sort((a, b) => b.time - a.time);
+
+          if (files.length === 0) {
+            return "[error]No videos found to play.";
+          }
+
+          videoPath = files[0].path;
+        }
+
+        console.log(`Playing video on LCD: ${videoPath}`);
+
+        // Mark that video will be playing - this tells chat flow to show video after TTS
+        setVideoPlaybackMarker(VIDEO_FRAME_PATH);
+
+        // Start playback process in background (will happen after TTS completes)
+        setTimeout(async () => {
+          console.log("Starting video playback process...");
+          
+          const playbackProcess = spawn("python3", [
+            VIDEO_PLAYER_SCRIPT,
+            "play",
+            videoPath,
+          ]);
+
+          // Update display with video frames
+          playbackUpdateInterval = setInterval(() => {
+            if (fs.existsSync(VIDEO_FRAME_PATH)) {
+              display({
+                RGB: "#0000FF", // Blue while playing
+                image: VIDEO_FRAME_PATH,
+              });
+            }
+          }, 50); // Update every 50ms for smooth playback
+
+          // Handle playback completion
+          playbackProcess.on("exit", (code) => {
+            console.log(`Video playback exited with code ${code}`);
+            
+            // Stop frame updates
+            if (playbackUpdateInterval) {
+              clearInterval(playbackUpdateInterval);
+              playbackUpdateInterval = null;
+            }
+
+            // Clear video state
+            clearVideoPlayback();
+
+            // Clear display
+            display({
+              RGB: "#00c8a3",
+              emoji: "✅",
+              text: "Video finished",
+              image: "",
+            });
+          });
+
+          playbackProcess.on("error", (error) => {
+            console.error("Playback process error:", error);
+            if (playbackUpdateInterval) {
+              clearInterval(playbackUpdateInterval);
+              playbackUpdateInterval = null;
+            }
+            clearVideoPlayback();
+          });
+        }, 2000); // Wait 2 seconds for TTS to start
+
+        return "[success]Video will play on the display after I finish speaking.";
+      } catch (error: any) {
+        console.error("Error playing video:", error);
+        if (playbackUpdateInterval) {
+          clearInterval(playbackUpdateInterval);
+          playbackUpdateInterval = null;
+        }
+        return `[error]Failed to play video: ${error.message}`;
+      }
+    },
+  },
+
+  // Stop video playback
+  {
+    type: "function",
+    function: {
+      name: "stopVideo",
+      description: "Stop the currently playing video",
+      parameters: {},
+    },
+    func: async (params) => {
+      try {
+        console.log("Stopping video playback...");
+
+        // Stop frame updates immediately
+        if (playbackUpdateInterval) {
+          clearInterval(playbackUpdateInterval);
+          playbackUpdateInterval = null;
+        }
+
+        // Clear video playback state
+        clearVideoPlayback();
+
+        // Send stop command to player
+        const command = `python3 ${VIDEO_PLAYER_SCRIPT} stop`;
+        const { stdout, stderr } = await execAsync(command);
+
+        if (stdout) console.log("Stop output:", stdout);
+        if (stderr && !stderr.includes("No active")) {
+          console.error("Stop stderr:", stderr);
+        }
+
+        // Clear display
+        display({
+          RGB: "#00c8a3",
+          emoji: "⏹️",
+          text: "Video stopped",
+          image: "",
+        });
+
+        return "[success]Video playback stopped.";
+      } catch (error: any) {
+        console.error("Error stopping video:", error);
+        
+        // Ensure cleanup even on error
+        if (playbackUpdateInterval) {
+          clearInterval(playbackUpdateInterval);
+          playbackUpdateInterval = null;
+        }
+        
+        return `[error]Failed to stop video: ${error.message}`;
+      }
+    },
+  },
+];
+
+export default videoTools;
+

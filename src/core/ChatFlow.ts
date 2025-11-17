@@ -15,7 +15,17 @@ import {
 import { extractEmojis } from "../utils";
 import { StreamResponser } from "./StreamResponsor";
 import { recordingsDir } from "../utils/dir";
-import { getLatestGenImg } from "../utils/image";
+import { 
+  getLatestGenImg, 
+  isVisualModeActive,
+  getPendingVisualMode,
+  hasVisualPending,
+  setLiveDetectionActive,
+  setVideoRecordingActive,
+  clearVideoPlayback
+} from "../utils/image";
+import fs from "fs";
+import { resolve } from "path";
 
 class ChatFlow {
   currentFlowName: string = "";
@@ -35,6 +45,8 @@ class ChatFlow {
       ttsProcessor,
       (sentences: string[]) => {
         if (this.currentFlowName !== "answer") return;
+        // Don't update display if any visual mode is active or pending
+        if (isVisualModeActive() || hasVisualPending()) return;
         const fullText = sentences.join(" ");
         display({
           status: "answering",
@@ -46,6 +58,8 @@ class ChatFlow {
       },
       (text: string) => {
         if (this.currentFlowName !== "answer") return;
+        // Don't update display if any visual mode is active or pending
+        if (isVisualModeActive() || hasVisualPending()) return;
         display({
           status: "answering",
           text: text || undefined,
@@ -60,6 +74,8 @@ class ChatFlow {
     answerId: number
   ): void => {
     if (this.currentFlowName !== "answer" || answerId < this.answerId) return;
+    // Don't update display if any visual mode is active or pending
+    if (isVisualModeActive() || hasVisualPending()) return;
     this.partialThinking += partialThinking;
     const { sentences, remaining } = splitSentences(this.partialThinking);
     if (sentences.length > 0) {
@@ -76,6 +92,342 @@ class ChatFlow {
     this.partialThinking = remaining;
   };
 
+  // Visual mode display intervals
+  private visualModeInterval: NodeJS.Timeout | null = null;
+  private activeVisualProcess: any = null; // Track spawned Python processes
+
+  startVisualMode = (visualMode: { type: string; framePath: string }): void => {
+    console.log(`[ChatFlow] ========================================`);
+    console.log(`[ChatFlow] Starting visual mode: ${visualMode.type}`);
+    console.log(`[ChatFlow] Frame path: ${visualMode.framePath}`);
+    console.log(`[ChatFlow] Current flow before: ${this.currentFlowName}`);
+    
+    // Stop any existing visual mode and clean up
+    this.stopVisualMode();
+    
+    // Wait a moment for cleanup to complete
+    const startTime = Date.now();
+    
+    // Set appropriate state flags
+    if (visualMode.type === 'detection') {
+      const detectionScript = (visualMode as any).detectionScript;
+      const targetObjects = (visualMode as any).targetObjects || [];
+      const duration = (visualMode as any).duration;
+      
+      console.log(`[ChatFlow] ========================================`);
+      console.log(`[ChatFlow] DETECTION MODE - Starting live detection process`);
+      console.log(`[ChatFlow] Detection frame path: ${visualMode.framePath}`);
+      console.log(`[ChatFlow] Target objects:`, targetObjects);
+      console.log(`[ChatFlow] Duration: ${duration ? duration + 's' : 'continuous'}`);
+      console.log(`[ChatFlow] Script: ${detectionScript}`);
+      console.log(`[ChatFlow] ========================================`);
+      
+      setLiveDetectionActive(true);
+      this.currentFlowName = "detection";
+      
+      // Build detection command args
+      const args = ["start", ...targetObjects];
+      if (duration) {
+        args.push("--duration", String(duration));
+      }
+      
+      // Start the detection process NOW (just like recording/playback)
+      const { spawn } = require("child_process");
+      const detectionProcess = spawn("python3", [detectionScript, ...args]);
+      this.activeVisualProcess = detectionProcess; // Track it for cleanup
+      
+      detectionProcess.stdout?.on("data", (data: Buffer) => {
+        console.log(`[Detector]: ${data.toString().trim()}`);
+      });
+      
+      detectionProcess.stderr?.on("data", (data: Buffer) => {
+        console.error(`[Detector ERROR]: ${data.toString().trim()}`);
+      });
+      
+      detectionProcess.on("exit", (code: number) => {
+        console.log(`[ChatFlow] ----------------------------------------`);
+        console.log(`[ChatFlow] Detection process exited with code ${code}`);
+        
+        // Auto-stop visual mode after detection completes
+        setTimeout(() => {
+          if (this.visualModeInterval) {
+            console.log(`[ChatFlow] Cleaning up after detection completion`);
+            this.stopVisualMode();
+            this.setCurrentFlow("sleep");
+          }
+        }, 1000); // Give 1 second to see the last frame
+      });
+      
+      detectionProcess.on("error", (error: Error) => {
+        console.error(`[ChatFlow] Detection process error:`, error);
+        this.stopVisualMode();
+        this.setCurrentFlow("sleep");
+      });
+      
+    } else if (visualMode.type === 'recording') {
+      const videoPath = (visualMode as any).videoPath;
+      const duration = (visualMode as any).duration;
+      const recordingScript = (visualMode as any).recordingScript;
+      
+      console.log(`[ChatFlow] ========================================`);
+      console.log(`[ChatFlow] RECORDING MODE - Starting video recording process`);
+      console.log(`[ChatFlow] Preview frame path: ${visualMode.framePath}`);
+      console.log(`[ChatFlow] Video path: ${videoPath}`);
+      console.log(`[ChatFlow] Duration: ${duration ? duration + 's' : 'continuous'}`);
+      console.log(`[ChatFlow] Script: ${recordingScript}`);
+      console.log(`[ChatFlow] ========================================`);
+      
+      setVideoRecordingActive(true);
+      this.currentFlowName = "recording";
+      
+      // Build recording command args
+      const args = [recordingScript, videoPath];
+      
+      // Add optional parameters only if provided
+      if (duration !== undefined) {
+        args.push(String(duration), "1280", "720", "30");
+      }
+      // If no duration, Python script will record continuously (no additional args needed)
+      
+      // Start the recording process NOW (just like playback does)
+      const { spawn } = require("child_process");
+      const recordingProcess = spawn("python3", args);
+      this.activeVisualProcess = recordingProcess; // Track it for cleanup
+      
+      recordingProcess.stdout?.on("data", (data: Buffer) => {
+        console.log(`[Recorder]: ${data.toString().trim()}`);
+      });
+      
+      recordingProcess.stderr?.on("data", (data: Buffer) => {
+        console.error(`[Recorder ERROR]: ${data.toString().trim()}`);
+      });
+      
+      recordingProcess.on("exit", (code: number) => {
+        console.log(`[ChatFlow] ----------------------------------------`);
+        console.log(`[ChatFlow] Recording process exited with code ${code}`);
+        
+        // Verify the file was created
+        if (fs.existsSync(videoPath)) {
+          const fileSizeBytes = fs.statSync(videoPath).size;
+          const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+          console.log(`[ChatFlow] Video recorded successfully: ${videoPath} (${fileSizeMB}MB)`);
+        } else {
+          console.error(`[ChatFlow] Video file was not created: ${videoPath}`);
+        }
+        
+        // Auto-stop visual mode after recording completes
+        setTimeout(() => {
+          if (this.visualModeInterval) {
+            console.log(`[ChatFlow] Cleaning up after recording completion`);
+            this.stopVisualMode();
+            this.setCurrentFlow("sleep");
+          }
+        }, 1000); // Give 1 second to see the last frame
+      });
+      
+      recordingProcess.on("error", (error: Error) => {
+        console.error(`[ChatFlow] Recording process error:`, error);
+        this.stopVisualMode();
+        this.setCurrentFlow("sleep");
+      });
+      
+    } else if (visualMode.type === 'playback') {
+      // isVideoPlaying is already set by setVideoPlaybackMarker
+      this.currentFlowName = "videoPlayback";
+      
+      // Start the video playback process
+      // framePath contains the video file path for playback mode
+      const videoPath = visualMode.framePath;
+      const VIDEO_PLAYER_SCRIPT = resolve(__dirname, "../../python/video_player_lcd.py");
+      const VIDEO_FRAME_PATH = "/tmp/whisplay_current_video_frame.jpg";
+      
+      console.log(`[ChatFlow] ----------------------------------------`);
+      console.log(`[ChatFlow] PLAYBACK MODE - Starting video playback process`);
+      console.log(`[ChatFlow] Video path: ${videoPath}`);
+      console.log(`[ChatFlow] Script: ${VIDEO_PLAYER_SCRIPT}`);
+      console.log(`[ChatFlow] Video file exists:`, fs.existsSync(videoPath));
+      console.log(`[ChatFlow] Video file size:`, fs.existsSync(videoPath) ? fs.statSync(videoPath).size : 'N/A');
+      
+      const { spawn } = require("child_process");
+      const playbackProcess = spawn("python3", [VIDEO_PLAYER_SCRIPT, "play", videoPath]);
+      this.activeVisualProcess = playbackProcess; // Track it for cleanup
+      
+      playbackProcess.stdout?.on("data", (data: Buffer) => {
+        console.log(`[Video Player]: ${data.toString().trim()}`);
+      });
+      
+      playbackProcess.stderr?.on("data", (data: Buffer) => {
+        console.error(`[Video Player ERROR]: ${data.toString().trim()}`);
+      });
+      
+      playbackProcess.on("exit", (code: number) => {
+        const endTime = Date.now();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
+        console.log(`[ChatFlow] ----------------------------------------`);
+        console.log(`[ChatFlow] Video playback exited with code ${code}`);
+        console.log(`[ChatFlow] Playback duration: ${duration}s`);
+        console.log(`[ChatFlow] Keeping last frame visible for 3 more seconds...`);
+        // Don't auto-stop, let user press button or wait for natural end
+        // Just clear the interval after a delay to show last frame
+        setTimeout(() => {
+          if (this.visualModeInterval) {
+            console.log(`[ChatFlow] Cleaning up after playback completion`);
+            this.stopVisualMode();
+            this.setCurrentFlow("sleep");
+          }
+        }, 3000); // Give 3 seconds to see the last frame
+      });
+      
+      playbackProcess.on("error", (error: Error) => {
+        console.error(`[ChatFlow] Playback process error:`, error);
+        this.stopVisualMode();
+        this.setCurrentFlow("sleep");
+      });
+      
+      // Update framePath to the actual frame marker
+      visualMode.framePath = VIDEO_FRAME_PATH;
+    }
+    
+    // Get color based on mode
+    const colorMap = {
+      detection: "#00FFFF",  // Cyan
+      recording: "#FF0000",  // Red
+      playback: "#0000FF",   // Blue
+    };
+    const RGB = colorMap[visualMode.type as keyof typeof colorMap] || "#FFFFFF";
+    
+    // Clear all display elements first
+    display({
+      status: "",
+      RGB,
+      text: "",
+      emoji: "",
+      image: "",
+    });
+    
+    // Start updating display with frames
+    let frameCheckCount = 0;
+    let frameDisplayCount = 0;
+    let lastFrameSize = 0;
+    
+    console.log(`[ChatFlow] Starting frame update interval (${visualMode.type === 'playback' ? '30ms' : '100ms'})`);
+    
+    this.visualModeInterval = setInterval(() => {
+      frameCheckCount++;
+      
+      // Always try to update display, even if file doesn't exist (will clear if needed)
+      try {
+        if (fs.existsSync(visualMode.framePath)) {
+          const stats = fs.statSync(visualMode.framePath);
+          const currentSize = stats.size;
+          
+          // Log frame updates occasionally
+          if (currentSize !== lastFrameSize) {
+            frameDisplayCount++;
+            if (visualMode.type === 'recording') {
+              // More verbose logging for recording to debug
+              if (frameDisplayCount % 5 === 0 || frameDisplayCount <= 5) {
+                console.log(`[ChatFlow] 🎥 RECORDING Frame #${frameDisplayCount} updated (size: ${currentSize} bytes, path: ${visualMode.framePath})`);
+              }
+            } else if (frameDisplayCount % 10 === 0 || frameDisplayCount <= 3) {
+              console.log(`[ChatFlow] Frame #${frameDisplayCount} updated (size: ${currentSize} bytes)`);
+            }
+            lastFrameSize = currentSize;
+          }
+          
+          // Always update display (file might be same but needs refresh)
+          display({
+            status: "",
+            RGB,
+            text: "",
+            emoji: "",
+            image: visualMode.framePath,
+          });
+        } else {
+          if (frameCheckCount === 1) {
+            console.log(`[ChatFlow] WARNING: Frame file does not exist yet: ${visualMode.framePath}`);
+          } else if (visualMode.type === 'recording' && frameCheckCount % 10 === 0) {
+            // Check periodically for recording mode if frames aren't appearing
+            console.log(`[ChatFlow] ⏳ Still waiting for recording frames... (check #${frameCheckCount})`);
+          }
+        }
+      } catch (error) {
+        // File might be in the middle of being written, skip this frame
+        if (frameCheckCount < 5) {
+          console.log(`[ChatFlow] Frame check error:`, error);
+        }
+      }
+    }, visualMode.type === 'playback' ? 30 : 100); // 30ms for playback (33 FPS max), 100ms for others
+    
+    console.log(`[ChatFlow] Visual mode initialized, waiting for frames...`);
+    
+    // Set button handler to stop visual mode
+    onButtonPressed(() => {
+      this.stopVisualMode();
+      this.setCurrentFlow("listening");
+    });
+    onButtonReleased(noop);
+  };
+
+  stopVisualMode = (): void => {
+    if (this.visualModeInterval) {
+      clearInterval(this.visualModeInterval);
+      this.visualModeInterval = null;
+    }
+    
+    // Kill any active Python visual process (detection/recording/playback)
+    if (this.activeVisualProcess) {
+      try {
+        console.log(`[ChatFlow] Killing active visual process (PID: ${this.activeVisualProcess.pid})`);
+        this.activeVisualProcess.kill("SIGTERM"); // Try graceful shutdown first
+        
+        // Force kill after 1 second if still alive
+        setTimeout(() => {
+          if (this.activeVisualProcess && !this.activeVisualProcess.killed) {
+            console.log(`[ChatFlow] Force killing process (PID: ${this.activeVisualProcess.pid})`);
+            this.activeVisualProcess.kill("SIGKILL");
+          }
+        }, 1000);
+        
+        this.activeVisualProcess = null;
+      } catch (error) {
+        console.error(`[ChatFlow] Error killing visual process:`, error);
+        this.activeVisualProcess = null;
+      }
+    }
+    
+    // Clear state flags
+    setLiveDetectionActive(false);
+    setVideoRecordingActive(false);
+    clearVideoPlayback();
+    
+    // Clean up temporary frame files
+    const tempFiles = [
+      "/tmp/whisplay_current_video_frame.jpg",
+      "/tmp/whisplay_video_preview_latest.jpg",
+      "/tmp/whisplay_detection_frame.jpg"
+    ];
+    
+    tempFiles.forEach(file => {
+      try {
+        if (fs.existsSync(file)) {
+          fs.unlinkSync(file);
+        }
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    });
+    
+    // Clear display completely
+    display({
+      status: "idle",
+      RGB: "#00c8a3",
+      emoji: "✅",
+      text: "Visual mode stopped",
+      image: "",
+    });
+  };
+
   setCurrentFlow = (flowName: string): void => {
     console.log(`[${getCurrentTimeTag()}] switch to:`, flowName);
     switch (flowName) {
@@ -85,19 +437,22 @@ class ChatFlow {
           this.setCurrentFlow("listening");
         });
         onButtonReleased(noop);
-        display({
-          status: "idle",
-          emoji: "😴",
-          RGB: "#000055",
-          ...(getCurrentStatus().text === "Listening..."
-            ? {
-                text: "Press the button to start",
-              }
-            : {}),
-        });
+        // Don't update display if any visual mode is active
+        if (!isVisualModeActive()) {
+          display({
+            status: "idle",
+            emoji: "😴",
+            RGB: "#000055",
+            ...(getCurrentStatus().text === "Listening..."
+              ? {
+                  text: "Press the button to start",
+                }
+              : {}),
+          });
+        }
         break;
-      case "listening":
-        this.currentFlowName = "listening";
+        case "listening":
+          this.currentFlowName = "listening";
         this.currentRecordFilePath = `${
           this.recordingsDir
         }/user-${Date.now()}.${recordFileFormat}`;
@@ -142,7 +497,10 @@ class ChatFlow {
             if (result) {
               console.log("Audio recognized result:", result);
               this.asrText = result;
-              display({ status: "recognizing", text: result });
+              // Don't update display if any visual mode is active
+              if (!isVisualModeActive()) {
+                display({ status: "recognizing", text: result });
+              }
               this.setCurrentFlow("answer");
             } else {
               this.setCurrentFlow("sleep");
@@ -183,8 +541,19 @@ class ChatFlow {
         );
         getPlayEndPromise().then(() => {
           if (this.currentFlowName === "answer") {
+            // Check for pending visual mode first
+            const visualMode = getPendingVisualMode();
             const img = getLatestGenImg();
-            if (img) {
+            
+            console.log(`[ChatFlow] After TTS - visualMode:`, visualMode ? `${visualMode.type} @ ${visualMode.framePath}` : 'null');
+            console.log(`[ChatFlow] After TTS - latestImg:`, img || 'null');
+            
+            if (visualMode) {
+              // Start visual mode - similar to how images are handled
+              console.log(`[ChatFlow] Starting visual mode from getPlayEndPromise`);
+              this.startVisualMode(visualMode);
+            } else if (img) {
+              // Show generated/captured image
               display({
                 image: img,
               });

@@ -63,11 +63,9 @@ class RenderThread(threading.Thread):
     def render_frame(self, status, emoji, text, scroll_top, battery_level, battery_color):
         global current_scroll_speed, current_image_path, current_image
         if current_image_path not in [None, ""]:
-            # Try to load image from path
-            if current_image is not None:
-                rgb565_data = ImageUtils.image_to_rgb565(current_image, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
-                self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
-            elif os.path.exists(current_image_path):
+            # ALWAYS reload image from disk (no caching for video frames)
+            # current_image is set to None by update_display_data when image_path is provided
+            if os.path.exists(current_image_path):
                 try:
                     image = Image.open(current_image_path).convert("RGBA") # 1024x1024
                     # crop center and resize to fit screen ratio
@@ -85,7 +83,7 @@ class RenderThread(threading.Thread):
                         top = (img_h - new_h) // 2
                         image = image.crop((0, top, img_w, top + new_h))
                     image = image.resize((self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), Image.LANCZOS)
-                    current_image = image
+                    # Don't cache the image - it will be reloaded every frame
                     rgb565_data = ImageUtils.image_to_rgb565(image, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
                     self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
                 except Exception as e:
@@ -258,7 +256,7 @@ class RenderThread(threading.Thread):
 def update_display_data(status=None, emoji=None, text=None, 
                   scroll_speed=None, battery_level=None, battery_color=None, image_path=None):
     global current_status, current_emoji, current_text, current_battery_level
-    global current_battery_color, current_scroll_top, current_scroll_speed, current_image_path
+    global current_battery_color, current_scroll_top, current_scroll_speed, current_image_path, current_image
 
     # If text is not continuation of previous, reset scroll position
     if text is not None and not text.startswith(current_text):
@@ -271,6 +269,11 @@ def update_display_data(status=None, emoji=None, text=None,
     current_text = text if text is not None else current_text
     current_battery_level = battery_level if battery_level is not None else current_battery_level
     current_battery_color = battery_color if battery_color is not None else current_battery_color
+    
+    # Clear image cache if image_path changes or if it's the same path (for video frames)
+    # ALWAYS force reload when image_path is provided to ensure video frames update
+    if image_path is not None:
+        current_image = None  # Force reload on every frame update
     current_image_path = image_path if image_path is not None else current_image_path
 
 
@@ -402,8 +405,8 @@ def start_socket_server(render_thread, host='0.0.0.0', port=12345):
 if __name__ == "__main__":
     whisplay = WhisplayBoard()
     print(f"[LCD] Initialization finished: {whisplay.LCD_WIDTH}x{whisplay.LCD_HEIGHT}")
-    # start render thread
-    render_thread = RenderThread(whisplay, "NotoSansSC-Bold.ttf", fps=30)
+    # start render thread - increased FPS for smoother video playback
+    render_thread = RenderThread(whisplay, "NotoSansSC-Bold.ttf", fps=40)
     render_thread.start()
     start_socket_server(render_thread, host='0.0.0.0', port=12345)
     

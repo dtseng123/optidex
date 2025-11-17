@@ -1,0 +1,302 @@
+nohup: ignoring input
+yarn run v1.22.22
+$ node -r ts-node/register/transpile-only -r tsconfig-paths/register dist/index.js
+Starting Python process...
+Connecting to local display socket...
+[undici] No proxy configured
+@google/genai is using custom fetch implementation.
+Using sound card index: 1
+directory exists: /home/dash/whisplay-ai-chatbot/data
+directory exists: /home/dash/whisplay-ai-chatbot/data/tts
+directory exists: /home/dash/whisplay-ai-chatbot/data/recordings
+directory exists: /home/dash/whisplay-ai-chatbot/data/chat_history
+directory exists: /home/dash/whisplay-ai-chatbot/data/images
+Current ASR Server: openai
+Current LLM Server: openai
+Current TTS Server: piper
+Current Image Generation Server: openai
+[2025-11-15 00:57:45] ChatBot started.
+[2025-11-15 00:57:45] switch to: sleep
+Display Socket error: Error: connect ECONNREFUSED 0.0.0.0:12345
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '0.0.0.0',
+  port: 12345
+}
+Connection attempt 1 failed, retrying...
+Connected to battery service
+Connecting to local display socket...
+Connected to local display socket
+[2025-11-15 00:57:50] Received data from Whisplay hat: OK
+
+[2025-11-15 00:57:51] Received data from Whisplay hat: OK
+
+[2025-11-15 00:57:57] Received data from Whisplay hat: {"event": "button_pressed"}
+
+[2025-11-15 00:57:57] switch to: listening
+send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
+[2025-11-15 00:57:58] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:00] Received data from Whisplay hat: {"event": "button_released"}
+
+Killing recording process 23315
+[2025-11-15 00:58:00] switch to: asr
+Killed process 23316
+Killed process 23315
+[2025-11-15 00:58:01] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:01] Received data from Whisplay hat: OK
+
+Transcription result: Thank you. Thank you. Thank you. 
+Audio recognized result: Thank you. Thank you. Thank you. 
+send data: {"text":"Thank you. Thank you. Thank you. ","brightness":100}
+[2025-11-15 00:58:02] switch to: answer
+[2025-11-15 00:58:02] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:02] Received data from Whisplay hat: OK
+
+send data: {"status":"answering","text":"You're welcome, ","RGB":"#0000ff","brightness":100}
+send data: {"text":"You're welcome,  welcome, ","brightness":100}
+send data: {"text":"You're welcome,  welcome,  welcome! ","brightness":100}
+send data: {"emoji":"😊","text":"You're welcome,  welcome,  welcome!  😊 If there's anything else I can help with, ","brightness":100}
+send data: {"text":"You're welcome,  welcome,  welcome!  😊 If there's anything else I can help with,  let me know! ","brightness":100}
+send data: {"text":"You're welcome,  welcome,  welcome!  😊 If there's anything else I can help with,  let me know!  🌟","brightness":100}
+[2025-11-15 00:58:03] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:03] Received data from Whisplay hat: OK
+OK
+OK
+OK
+OK
+OK
+
+Failed to parse JSON from data
+Piper process exited with code 1
+Playing audio 1/6
+Playback duration: 940
+Playing raw data 'stdin' : Signed 16 bit Little Endian, Rate 24000 Hz, Mono
+
+Audio playback completed
+Playing audio 2/6
+Playback duration: 708
+Audio playback completed
+Playing audio 3/6
+Playback duration: 639
+Audio playback completed
+Playing audio 4/6
+Playback duration: 1939
+Audio playback completed
+Playing audio 5/6
+Playback duration: 917
+Audio playback completed
+Playing audio 6/6
+No audio data to play, skipping playback.
+Play all audio completed. Total: 6
+[2025-11-15 00:58:13] switch to: sleep
+[2025-11-15 00:58:14] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:50] Received data from Whisplay hat: {"event": "button_pressed"}
+
+[2025-11-15 00:58:50] switch to: listening
+send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
+[2025-11-15 00:58:51] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:53] Received data from Whisplay hat: {"event": "button_released"}
+
+Killing recording process 23427
+[2025-11-15 00:58:53] switch to: asr
+Killed process 23427
+Killed process 23428
+[2025-11-15 00:58:54] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:54] Received data from Whisplay hat: OK
+
+Transcription result: What is the weather today?
+Audio recognized result: What is the weather today?
+send data: {"text":"What is the weather today?","brightness":100}
+[2025-11-15 00:58:55] switch to: answer
+[2025-11-15 00:58:55] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:55] Received data from Whisplay hat: OK
+
+send data: {"status":"answering","text":"I can't check the current weather, ","RGB":"#0000ff","brightness":100}
+send data: {"text":"I can't check the current weather,  but you can easily find it on a weather app or website! ","brightness":100}
+send data: {"text":"I can't check the current weather,  but you can easily find it on a weather app or website!  If you're looking for anything specific, ","brightness":100}
+send data: {"text":"I can't check the current weather,  but you can easily find it on a weather app or website!  If you're looking for anything specific,  let me know! ","brightness":100}
+send data: {"emoji":"🌞","text":"I can't check the current weather,  but you can easily find it on a weather app or website!  If you're looking for anything specific,  let me know!  🌞🌧️","brightness":100}
+[2025-11-15 00:58:58] Received data from Whisplay hat: OK
+
+[2025-11-15 00:58:58] Received data from Whisplay hat: OK
+OK
+OK
+OK
+OK
+
+Failed to parse JSON from data
+Playing audio 1/5
+Playback duration: 1834
+Audio playback completed
+Playing audio 2/5
+Playback duration: 3019
+Audio playback completed
+Playing audio 3/5
+Playback duration: 1927
+Audio playback completed
+Playing audio 4/5
+Playback duration: 987
+Audio playback completed
+Playing audio 5/5
+Playback duration: 1103
+Audio playback completed
+Play all audio completed. Total: 5
+[2025-11-15 00:59:10] switch to: sleep
+[2025-11-15 00:59:11] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:17] Received data from Whisplay hat: {"event": "button_pressed"}
+
+[2025-11-15 01:00:17] switch to: listening
+send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
+[2025-11-15 01:00:18] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:20] Received data from Whisplay hat: {"event": "button_released"}
+
+Killing recording process 24033
+[2025-11-15 01:00:20] switch to: asr
+Killed process 24034
+Killed process 24033
+[2025-11-15 01:00:21] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:21] Received data from Whisplay hat: OK
+
+Transcription result: I'm going to bring him down slightly.
+Audio recognized result: I'm going to bring him down slightly.
+send data: {"text":"I'm going to bring him down slightly.","brightness":100}
+[2025-11-15 01:00:23] switch to: answer
+[2025-11-15 01:00:23] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:24] Received data from Whisplay hat: OK
+
+send data: {"status":"answering","text":"Could you clarify what you mean by \"bring him down slightly\"? ","RGB":"#0000ff","brightness":100}
+send data: {"text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume, ","brightness":100}
+send data: {"text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume,  dimming the lights, ","brightness":100}
+send data: {"text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume,  dimming the lights,  or something else? ","brightness":100}
+send data: {"emoji":"🤔","text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume,  dimming the lights,  or something else?  🤔💡🔉","brightness":100}
+[2025-11-15 01:00:25] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:25] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:25] Received data from Whisplay hat: OK
+OK
+OK
+OK
+
+Failed to parse JSON from data
+Playing audio 1/5
+Playback duration: 3077
+(node:23211) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 data listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23211) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 data listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(node:23211) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 exit listeners added to [ChildProcess]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+Piper process exited with code 1
+Audio playback completed
+Playing audio 2/5
+Playback duration: 2020
+Audio playback completed
+Playing audio 3/5
+Playback duration: 1242
+Audio playback completed
+Playing audio 4/5
+Playback duration: 1231
+Audio playback completed
+Playing audio 5/5
+No audio data to play, skipping playback.
+Play all audio completed. Total: 5
+[2025-11-15 01:00:37] switch to: sleep
+[2025-11-15 01:00:37] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:38] Received data from Whisplay hat: {"event": "button_pressed"}
+
+[2025-11-15 01:00:38] switch to: listening
+send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
+[2025-11-15 01:00:38] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:41] Received data from Whisplay hat: {"event": "button_released"}
+
+Killing recording process 24065
+[2025-11-15 01:00:41] switch to: asr
+Killed process 24066
+Killed process 24065
+[2025-11-15 01:00:42] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:42] Received data from Whisplay hat: OK
+
+Transcription result: Even to be lower.
+Audio recognized result: Even to be lower.
+send data: {"text":"Even to be lower.","brightness":100}
+[2025-11-15 01:00:42] switch to: answer
+[2025-11-15 01:00:42] Received data from Whisplay hat: OK
+
+[2025-11-15 01:00:42] Received data from Whisplay hat: OK
+
+amixer: Unable to find simple control 'Speaker',0
+
+Unhandled Rejection at: Promise {
+  <rejected> Error: Command failed: amixer -c 1 get Speaker
+  amixer: Unable to find simple control 'Speaker',0
+  
+  
+      at genericNodeError (node:internal/errors:984:15)
+      at wrappedFn (node:internal/errors:538:14)
+      at checkExecSyncError (node:child_process:891:11)
+      at execSync (node:child_process:963:15)
+      at getVolumeValueFromAmixer (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:29:49)
+      at getCurrentLogPercent (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:56:19)
+      at func (/home/dash/whisplay-ai-chatbot/dist/config/llm-tools.js:72:73)
+      at /home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:126:35
+      at Array.map (<anonymous>)
+      at chatWithLLMStream (/home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:115:57)
+      at processTicksAndRejections (node:internal/process/task_queues:95:5) {
+    status: 1,
+    signal: null,
+    output: [
+      null,
+      <Buffer >,
+      <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
+    ],
+    pid: 24075,
+    stdout: <Buffer >,
+    stderr: <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
+  }
+} reason: Error: Command failed: amixer -c 1 get Speaker
+amixer: Unable to find simple control 'Speaker',0
+
+
+    at genericNodeError (node:internal/errors:984:15)
+    at wrappedFn (node:internal/errors:538:14)
+    at checkExecSyncError (node:child_process:891:11)
+    at execSync (node:child_process:963:15)
+    at getVolumeValueFromAmixer (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:29:49)
+    at getCurrentLogPercent (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:56:19)
+    at func (/home/dash/whisplay-ai-chatbot/dist/config/llm-tools.js:72:73)
+    at /home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:126:35
+    at Array.map (<anonymous>)
+    at chatWithLLMStream (/home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:115:57)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  status: 1,
+  signal: null,
+  output: [
+    null,
+    <Buffer >,
+    <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
+  ],
+  pid: 24075,
+  stdout: <Buffer >,
+  stderr: <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
+}
+Cleaning up display process before exit...
+Killing Python process... 23225
+Cleaning up display process before exit...
+error Command failed with exit code 1.
+info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.
