@@ -4,6 +4,7 @@ import { promisify } from "util";
 import path from "path";
 import { imageDir } from "../../utils/dir";
 import { setLatestGenImg } from "../../utils/image";
+import { telegramBot } from "../../utils/telegram";
 import fs from "fs";
 
 const execAsync = promisify(exec);
@@ -46,6 +47,9 @@ const cameraTools: LLMTool[] = [
 
         // Set this as the latest generated image so it will be displayed
         setLatestGenImg(imagePath);
+
+        // Send to Telegram
+        telegramBot.sendPhoto(imagePath);
 
         console.log(`Picture saved successfully: ${imagePath}`);
         return `[success]Picture taken and saved.`;

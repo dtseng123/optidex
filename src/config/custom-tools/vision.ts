@@ -24,7 +24,7 @@ const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || "moondream";
 // OpenAI vision analysis (GPT-4o supports vision natively)
 async function analyzeImageWithOpenAI(imagePath: string, prompt: string): Promise<string> {
   try {
-    const openai = require("../cloud-api/openai").openai;
+    const openai = require("../../cloud-api/openai").openai;
     if (!openai) {
       return "[error]OpenAI not configured";
     }

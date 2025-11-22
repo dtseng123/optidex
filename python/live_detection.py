@@ -7,9 +7,10 @@ import sys
 import os
 import time
 import json
+import cv2
+import numpy as np
 from picamera2 import Picamera2
 from PIL import Image, ImageDraw, ImageFont
-import numpy as np
 
 # State file for detection control
 STATE_FILE = "/tmp/whisplay_detection_state.json"
@@ -91,7 +92,7 @@ def draw_detections(image, detections, target_objects):
     
     return image
 
-def run_live_detection(target_objects, confidence_threshold=0.3, duration=None):
+def run_live_detection(target_objects, confidence_threshold=0.3, duration=None, video_out=None):
     """
     Run live object detection with YOLOE
     
@@ -99,6 +100,7 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None):
         target_objects: List of object names to detect (e.g., ["person", "cup"])
         confidence_threshold: Minimum confidence for detections (0.0-1.0)
         duration: How long to run (seconds), None for continuous
+        video_out: Path to save recorded video with detections (optional)
     """
     try:
         # Import YOLO (ultralytics)
@@ -112,7 +114,8 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None):
         # Use YOLO-World for detecting any object via text prompts
         # yolov8s-world.pt (small) or yolov8m-world.pt (medium) or yolov8l-world.pt (large)
         # Standard YOLOv8 only detects 80 COCO classes, World models can detect thousands!
-        model = YOLO('yolov8s-world.pt')  # World model for custom object detection (~35MB)
+        yolo_model = os.environ.get('YOLO_MODEL', 'yolov8s-world.pt')
+        model = YOLO(yolo_model)  # World model for custom object detection
         
         # Set custom classes for YOLO-World (this is how we "prompt" it)
         print(f"Setting detection classes: {', '.join(target_objects)}")
@@ -142,6 +145,15 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None):
         print(f"Warming up camera (auto-exposure adjustment)...", flush=True)
         time.sleep(3.0)
         print(f"Camera ready!", flush=True)
+        
+        # Initialize Video Writer if requested
+        video_writer = None
+        if video_out:
+            print(f"Initializing video recording to: {video_out}")
+            # Define the codec (mp4v is widely supported)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            # Size must match the frame size we are processing (640x480)
+            video_writer = cv2.VideoWriter(video_out, fourcc, 15.0, (640, 480))
         
         print(f"Starting live detection for: {', '.join(target_objects)}")
         print(f"Confidence threshold: {confidence_threshold}")
@@ -221,6 +233,19 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None):
                 if frame_count % 10 == 0 or frame_count <= 3:
                     print(f"[Detection] Frame {frame_count}: No objects detected", flush=True)
             
+            # Write to video if recording enabled
+            if video_writer:
+                # Convert PIL image (RGB) back to OpenCV format (BGR)
+                # Note: image might be RGBA from drawing, ensure RGB first
+                if image.mode == 'RGBA':
+                    frame_to_save = np.array(image.convert('RGB'))
+                else:
+                    frame_to_save = np.array(image)
+                
+                # RGB to BGR
+                frame_to_save = cv2.cvtColor(frame_to_save, cv2.COLOR_RGB2BGR)
+                video_writer.write(frame_to_save)
+
             # Save frame for display (ALWAYS save, even without detections - shows live camera feed)
             # DEBUG: Check image before processing
             if frame_count == 0:
@@ -255,6 +280,10 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None):
             time.sleep(0.05)
         
         # Cleanup
+        if video_writer:
+            video_writer.release()
+            print(f"Video saved to: {video_out}")
+            
         picam2.stop()
         picam2.close()
         clear_state()
@@ -282,12 +311,12 @@ def stop_detection():
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: live_detection.py <start|stop> [objects...] [--confidence 0.3] [--duration 30]")
+        print("Usage: live_detection.py <start|stop> [objects...] [--confidence 0.3] [--duration 30] [--video_out path.mp4]")
         print("")
         print("Examples:")
         print("  live_detection.py start person cup bottle")
         print("  live_detection.py start hand --confidence 0.5")
-        print("  live_detection.py start person --duration 30")
+        print("  live_detection.py start person --duration 30 --video_out /tmp/test.mp4")
         print("  live_detection.py stop")
         sys.exit(1)
     
@@ -298,6 +327,7 @@ if __name__ == "__main__":
         objects = []
         confidence = 0.3
         duration = None
+        video_out = None
         
         i = 2
         while i < len(sys.argv):
@@ -307,6 +337,9 @@ if __name__ == "__main__":
             elif sys.argv[i] == "--duration" and i + 1 < len(sys.argv):
                 duration = float(sys.argv[i + 1])
                 i += 2
+            elif sys.argv[i] == "--video_out" and i + 1 < len(sys.argv):
+                video_out = sys.argv[i + 1]
+                i += 2
             else:
                 objects.append(sys.argv[i])
                 i += 1
@@ -315,7 +348,7 @@ if __name__ == "__main__":
             print("Error: No objects specified to detect")
             sys.exit(1)
         
-        success = run_live_detection(objects, confidence, duration)
+        success = run_live_detection(objects, confidence, duration, video_out)
         sys.exit(0 if success else 1)
     
     elif action == "stop":

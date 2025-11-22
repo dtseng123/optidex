@@ -10,3 +10,8 @@ dist
 python/__pycache__/
 chatbot.log
 use_ollama
+user-*.txt
+user-*.wav
+captures/
+chatbot-run.log
+*.pt

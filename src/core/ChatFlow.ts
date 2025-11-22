@@ -1,5 +1,7 @@
 import { getCurrentTimeTag, splitSentences } from "./../utils/index";
 import { get, noop } from "lodash";
+import { telegramBot } from "../utils/telegram";
+import { startMeshtasticMonitor } from "../config/custom-tools/meshtastic";
 import {
   onButtonPressed,
   onButtonReleased,
@@ -41,6 +43,43 @@ class ChatFlow {
     console.log(`[${getCurrentTimeTag()}] ChatBot started.`);
     this.recordingsDir = recordingsDir;
     this.setCurrentFlow("sleep");
+    
+    // Listen for Telegram messages
+    telegramBot.setOnMessageCallback((text) => {
+      console.log(`[ChatFlow] Received Telegram message: ${text}`);
+      
+      // If a visual mode is active, we must stop it to give control to the answer flow
+      if (isVisualModeActive()) {
+        console.log(`[ChatFlow] Stopping visual mode for incoming Telegram message`);
+        this.stopVisualMode();
+      }
+      
+      this.asrText = text;
+      display({ status: "recognizing", text: text });
+      this.setCurrentFlow("answer");
+    });
+
+    // Listen for Meshtastic messages
+    startMeshtasticMonitor((msg: any) => {
+       console.log("[ChatFlow] Received Meshtastic message:", msg);
+       
+       // Format message for TTS
+       const spokenText = `New message from ${msg.from}: ${msg.text}`;
+       
+       // If visual mode active, stop it
+       if (isVisualModeActive()) {
+           this.stopVisualMode();
+       }
+       
+       // Display and Speak
+       this.asrText = spokenText;
+       display({ status: "recognizing", text: `Msg from ${msg.from}` });
+       
+       // Trigger answer flow to read it out
+       this.asrText = `I just received a message on the mesh network from ${msg.from}. It says: "${msg.text}". Please read this out to me.`;
+       this.setCurrentFlow("answer");
+    });
+
     this.streamResponser = new StreamResponser(
       ttsProcessor,
       (sentences: string[]) => {
@@ -113,12 +152,14 @@ class ChatFlow {
       const detectionScript = (visualMode as any).detectionScript;
       const targetObjects = (visualMode as any).targetObjects || [];
       const duration = (visualMode as any).duration;
+      const videoPath = (visualMode as any).videoPath;
       
       console.log(`[ChatFlow] ========================================`);
       console.log(`[ChatFlow] DETECTION MODE - Starting live detection process`);
       console.log(`[ChatFlow] Detection frame path: ${visualMode.framePath}`);
       console.log(`[ChatFlow] Target objects:`, targetObjects);
       console.log(`[ChatFlow] Duration: ${duration ? duration + 's' : 'continuous'}`);
+      console.log(`[ChatFlow] Video output: ${videoPath || 'None'}`);
       console.log(`[ChatFlow] Script: ${detectionScript}`);
       console.log(`[ChatFlow] ========================================`);
       
@@ -130,14 +171,34 @@ class ChatFlow {
       if (duration) {
         args.push("--duration", String(duration));
       }
+      if (videoPath) {
+        args.push("--video_out", videoPath);
+      }
       
       // Start the detection process NOW (just like recording/playback)
       const { spawn } = require("child_process");
       const detectionProcess = spawn("python3", [detectionScript, ...args]);
       this.activeVisualProcess = detectionProcess; // Track it for cleanup
       
+      // Track detection start time
+      const detectionStartTime = Date.now();
+      let lastDetectionLog = 0;
+
       detectionProcess.stdout?.on("data", (data: Buffer) => {
-        console.log(`[Detector]: ${data.toString().trim()}`);
+        const msg = data.toString().trim();
+        
+        // Log detection events (throttled)
+        if (Date.now() - lastDetectionLog > 1000) {
+            console.log(`[Detector]: ${msg}`);
+            lastDetectionLog = Date.now();
+        }
+
+        // Check if we should stop based on duration (if provided)
+        // Note: Python script should handle this, but we double check here
+        if (duration && (Date.now() - detectionStartTime) > (duration * 1000 + 1000)) {
+             console.log(`[ChatFlow] Detection duration exceeded, stopping...`);
+             // The exit handler will clean up
+        }
       });
       
       detectionProcess.stderr?.on("data", (data: Buffer) => {
@@ -148,6 +209,16 @@ class ChatFlow {
         console.log(`[ChatFlow] ----------------------------------------`);
         console.log(`[ChatFlow] Detection process exited with code ${code}`);
         
+        // Check if a recording was made and send it
+        if (videoPath && fs.existsSync(videoPath)) {
+            const fileSizeBytes = fs.statSync(videoPath).size;
+            const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+            console.log(`[ChatFlow] Detection recording saved: ${videoPath} (${fileSizeMB}MB)`);
+            
+            // Send video to Telegram
+            telegramBot.sendVideo(videoPath);
+        }
+
         // Auto-stop visual mode after detection completes
         setTimeout(() => {
           if (this.visualModeInterval) {
@@ -211,6 +282,9 @@ class ChatFlow {
           const fileSizeBytes = fs.statSync(videoPath).size;
           const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
           console.log(`[ChatFlow] Video recorded successfully: ${videoPath} (${fileSizeMB}MB)`);
+          
+          // Send video to Telegram
+          telegramBot.sendVideo(videoPath);
         } else {
           console.error(`[ChatFlow] Video file was not created: ${videoPath}`);
         }
@@ -527,6 +601,7 @@ class ChatFlow {
         } = this.streamResponser;
         this.partialThinking = "";
         this.thinkingSentences = [];
+        let fullAnswer = "";
         chatWithLLMStream(
           [
             {
@@ -534,13 +609,21 @@ class ChatFlow {
               content: this.asrText,
             },
           ],
-          (text) => partial(text, currentAnswerId),
+          (text) => {
+            partial(text, currentAnswerId);
+            fullAnswer += text;
+          },
           () => endPartial(currentAnswerId),
           (partialThinking) =>
             this.partialThinkingCallback(partialThinking, currentAnswerId)
         );
         getPlayEndPromise().then(() => {
           if (this.currentFlowName === "answer") {
+            // Send conversation to Telegram
+            if (this.asrText && fullAnswer) {
+              telegramBot.sendMessage(`User: ${this.asrText}\n\nOptidex: ${fullAnswer}`);
+            }
+
             // Check for pending visual mode first
             const visualMode = getPendingVisualMode();
             const img = getLatestGenImg();

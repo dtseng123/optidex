@@ -1,10 +1,17 @@
 import { LLMTool } from "../../type";
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
+import fs from "fs";
 import { setPendingVisualMode } from "../../utils/image";
 
 const DETECTION_SCRIPT = path.join(__dirname, "../../../python/live_detection.py");
 const DETECTION_FRAME = "/tmp/whisplay_detection_frame.jpg";
+const VIDEO_DIR = path.join(__dirname, "../../../data/videos");
+
+// Ensure video directory exists
+if (!fs.existsSync(VIDEO_DIR)) {
+  fs.mkdirSync(VIDEO_DIR, { recursive: true });
+}
 
 // Global state
 let activeDetectionProcess: ChildProcess | null = null;
@@ -53,18 +60,23 @@ const liveDetectionTools: LLMTool[] = [
         // ChatFlow will start the detection process in startVisualMode()
         // This ensures the frames stream in real-time (like recording/playback)
         
+        // Generate a video path for recording the detection output
+        const videoFileName = `detection-${Date.now()}.mp4`;
+        const videoPath = path.join(VIDEO_DIR, videoFileName);
+
         setPendingVisualMode({
           type: 'detection',
           framePath: DETECTION_FRAME,
           detectionScript: DETECTION_SCRIPT,
           targetObjects: objects,
-          duration: duration
+          duration: duration,
+          videoPath: videoPath // Pass the video path for recording
         });
 
         const objectsList = objects.join(", ");
         const durationText = duration ? ` for ${duration} seconds` : " until you say stop";
         
-        return `[success]Starting detection${durationText} for: ${objectsList}`;
+        return `[success]Starting detection${durationText} for: ${objectsList}. Recording to video.`;
       } catch (error: any) {
         console.error("Error starting detection:", error);
         activeDetectionProcess = null;

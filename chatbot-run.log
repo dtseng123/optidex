@@ -1,302 +1,446 @@
-nohup: ignoring input
 yarn run v1.22.22
 $ node -r ts-node/register/transpile-only -r tsconfig-paths/register dist/index.js
+directory exists: /home/dash/ai-pi/data
+directory exists: /home/dash/ai-pi/data/tts
+directory exists: /home/dash/ai-pi/data/recordings
+directory exists: /home/dash/ai-pi/data/chat_history
+directory exists: /home/dash/ai-pi/data/images
 Starting Python process...
 Connecting to local display socket...
+[Telegram] Initializing... Waiting for user interaction to get Chat ID.
 [undici] No proxy configured
 @google/genai is using custom fetch implementation.
 Using sound card index: 1
-directory exists: /home/dash/whisplay-ai-chatbot/data
-directory exists: /home/dash/whisplay-ai-chatbot/data/tts
-directory exists: /home/dash/whisplay-ai-chatbot/data/recordings
-directory exists: /home/dash/whisplay-ai-chatbot/data/chat_history
-directory exists: /home/dash/whisplay-ai-chatbot/data/images
 Current ASR Server: openai
 Current LLM Server: openai
 Current TTS Server: piper
 Current Image Generation Server: openai
-[2025-11-15 00:57:45] ChatBot started.
-[2025-11-15 00:57:45] switch to: sleep
-Display Socket error: Error: connect ECONNREFUSED 0.0.0.0:12345
-    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1611:16) {
-  errno: -111,
-  code: 'ECONNREFUSED',
-  syscall: 'connect',
-  address: '0.0.0.0',
-  port: 12345
-}
-Connection attempt 1 failed, retrying...
-Connected to battery service
-Connecting to local display socket...
+[2025-11-22 22:21:31] ChatBot started.
+[2025-11-22 22:21:31] switch to: sleep
+[Meshtastic] Starting monitor...
+Traceback (most recent call last):
+  File "/home/dash/ai-pi/python/chatbot-ui.py", line 406, in <module>
+    whisplay = WhisplayBoard()
+  File "/home/dash/ai-pi/python/whisplay.py", line 28, in __init__
+    GPIO.setup([self.DC_PIN, self.RST_PIN, self.LED_PIN], GPIO.OUT)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/RPi/GPIO/__init__.py", line 704, in setup
+    initial = _check(lgpio.gpio_read(_chip, gpio))
+                     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/lgpio.py", line 903, in gpio_read
+    return _u2i(_lgpio._gpio_read(handle&0xffff, gpio))
+  File "/usr/lib/python3/dist-packages/lgpio.py", line 458, in _u2i
+    raise error(error_text(v))
+lgpio.error: 'GPIO not allocated'
+
 Connected to local display socket
-[2025-11-15 00:57:50] Received data from Whisplay hat: OK
-
-[2025-11-15 00:57:51] Received data from Whisplay hat: OK
-
-[2025-11-15 00:57:57] Received data from Whisplay hat: {"event": "button_pressed"}
-
-[2025-11-15 00:57:57] switch to: listening
-send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
-[2025-11-15 00:57:58] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:00] Received data from Whisplay hat: {"event": "button_released"}
-
-Killing recording process 23315
-[2025-11-15 00:58:00] switch to: asr
-Killed process 23316
-Killed process 23315
-[2025-11-15 00:58:01] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:01] Received data from Whisplay hat: OK
-
-Transcription result: Thank you. Thank you. Thank you. 
-Audio recognized result: Thank you. Thank you. Thank you. 
-send data: {"text":"Thank you. Thank you. Thank you. ","brightness":100}
-[2025-11-15 00:58:02] switch to: answer
-[2025-11-15 00:58:02] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:02] Received data from Whisplay hat: OK
-
-send data: {"status":"answering","text":"You're welcome, ","RGB":"#0000ff","brightness":100}
-send data: {"text":"You're welcome,  welcome, ","brightness":100}
-send data: {"text":"You're welcome,  welcome,  welcome! ","brightness":100}
-send data: {"emoji":"😊","text":"You're welcome,  welcome,  welcome!  😊 If there's anything else I can help with, ","brightness":100}
-send data: {"text":"You're welcome,  welcome,  welcome!  😊 If there's anything else I can help with,  let me know! ","brightness":100}
-send data: {"text":"You're welcome,  welcome,  welcome!  😊 If there's anything else I can help with,  let me know!  🌟","brightness":100}
-[2025-11-15 00:58:03] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:03] Received data from Whisplay hat: OK
-OK
-OK
-OK
-OK
-OK
-
-Failed to parse JSON from data
-Piper process exited with code 1
-Playing audio 1/6
-Playback duration: 940
-Playing raw data 'stdin' : Signed 16 bit Little Endian, Rate 24000 Hz, Mono
-
-Audio playback completed
-Playing audio 2/6
-Playback duration: 708
-Audio playback completed
-Playing audio 3/6
-Playback duration: 639
-Audio playback completed
-Playing audio 4/6
-Playback duration: 1939
-Audio playback completed
-Playing audio 5/6
-Playback duration: 917
-Audio playback completed
-Playing audio 6/6
-No audio data to play, skipping playback.
-Play all audio completed. Total: 6
-[2025-11-15 00:58:13] switch to: sleep
-[2025-11-15 00:58:14] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:50] Received data from Whisplay hat: {"event": "button_pressed"}
-
-[2025-11-15 00:58:50] switch to: listening
-send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
-[2025-11-15 00:58:51] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:53] Received data from Whisplay hat: {"event": "button_released"}
-
-Killing recording process 23427
-[2025-11-15 00:58:53] switch to: asr
-Killed process 23427
-Killed process 23428
-[2025-11-15 00:58:54] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:54] Received data from Whisplay hat: OK
-
-Transcription result: What is the weather today?
-Audio recognized result: What is the weather today?
-send data: {"text":"What is the weather today?","brightness":100}
-[2025-11-15 00:58:55] switch to: answer
-[2025-11-15 00:58:55] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:55] Received data from Whisplay hat: OK
-
-send data: {"status":"answering","text":"I can't check the current weather, ","RGB":"#0000ff","brightness":100}
-send data: {"text":"I can't check the current weather,  but you can easily find it on a weather app or website! ","brightness":100}
-send data: {"text":"I can't check the current weather,  but you can easily find it on a weather app or website!  If you're looking for anything specific, ","brightness":100}
-send data: {"text":"I can't check the current weather,  but you can easily find it on a weather app or website!  If you're looking for anything specific,  let me know! ","brightness":100}
-send data: {"emoji":"🌞","text":"I can't check the current weather,  but you can easily find it on a weather app or website!  If you're looking for anything specific,  let me know!  🌞🌧️","brightness":100}
-[2025-11-15 00:58:58] Received data from Whisplay hat: OK
-
-[2025-11-15 00:58:58] Received data from Whisplay hat: OK
-OK
-OK
-OK
-OK
-
-Failed to parse JSON from data
-Playing audio 1/5
-Playback duration: 1834
-Audio playback completed
-Playing audio 2/5
-Playback duration: 3019
-Audio playback completed
-Playing audio 3/5
-Playback duration: 1927
-Audio playback completed
-Playing audio 4/5
-Playback duration: 987
-Audio playback completed
-Playing audio 5/5
-Playback duration: 1103
-Audio playback completed
-Play all audio completed. Total: 5
-[2025-11-15 00:59:10] switch to: sleep
-[2025-11-15 00:59:11] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:17] Received data from Whisplay hat: {"event": "button_pressed"}
-
-[2025-11-15 01:00:17] switch to: listening
-send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
-[2025-11-15 01:00:18] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:20] Received data from Whisplay hat: {"event": "button_released"}
-
-Killing recording process 24033
-[2025-11-15 01:00:20] switch to: asr
-Killed process 24034
-Killed process 24033
-[2025-11-15 01:00:21] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:21] Received data from Whisplay hat: OK
-
-Transcription result: I'm going to bring him down slightly.
-Audio recognized result: I'm going to bring him down slightly.
-send data: {"text":"I'm going to bring him down slightly.","brightness":100}
-[2025-11-15 01:00:23] switch to: answer
-[2025-11-15 01:00:23] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:24] Received data from Whisplay hat: OK
-
-send data: {"status":"answering","text":"Could you clarify what you mean by \"bring him down slightly\"? ","RGB":"#0000ff","brightness":100}
-send data: {"text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume, ","brightness":100}
-send data: {"text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume,  dimming the lights, ","brightness":100}
-send data: {"text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume,  dimming the lights,  or something else? ","brightness":100}
-send data: {"emoji":"🤔","text":"Could you clarify what you mean by \"bring him down slightly\"?  Are you referring to adjusting the volume,  dimming the lights,  or something else?  🤔💡🔉","brightness":100}
-[2025-11-15 01:00:25] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:25] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:25] Received data from Whisplay hat: OK
-OK
-OK
-OK
-
-Failed to parse JSON from data
-Playing audio 1/5
-Playback duration: 3077
-(node:23211) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 data listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:23211) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 data listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
-(node:23211) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 exit listeners added to [ChildProcess]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
-Piper process exited with code 1
-Audio playback completed
-Playing audio 2/5
-Playback duration: 2020
-Audio playback completed
-Playing audio 3/5
-Playback duration: 1242
-Audio playback completed
-Playing audio 4/5
-Playback duration: 1231
-Audio playback completed
-Playing audio 5/5
-No audio data to play, skipping playback.
-Play all audio completed. Total: 5
-[2025-11-15 01:00:37] switch to: sleep
-[2025-11-15 01:00:37] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:38] Received data from Whisplay hat: {"event": "button_pressed"}
-
-[2025-11-15 01:00:38] switch to: listening
-send data: {"status":"listening","emoji":"😐","RGB":"#00ff00","text":"Listening...","brightness":100}
-[2025-11-15 01:00:38] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:41] Received data from Whisplay hat: {"event": "button_released"}
-
-Killing recording process 24065
-[2025-11-15 01:00:41] switch to: asr
-Killed process 24066
-Killed process 24065
-[2025-11-15 01:00:42] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:42] Received data from Whisplay hat: OK
-
-Transcription result: Even to be lower.
-Audio recognized result: Even to be lower.
-send data: {"text":"Even to be lower.","brightness":100}
-[2025-11-15 01:00:42] switch to: answer
-[2025-11-15 01:00:42] Received data from Whisplay hat: OK
-
-[2025-11-15 01:00:42] Received data from Whisplay hat: OK
-
-amixer: Unable to find simple control 'Speaker',0
-
-Unhandled Rejection at: Promise {
-  <rejected> Error: Command failed: amixer -c 1 get Speaker
-  amixer: Unable to find simple control 'Speaker',0
-  
-  
-      at genericNodeError (node:internal/errors:984:15)
-      at wrappedFn (node:internal/errors:538:14)
-      at checkExecSyncError (node:child_process:891:11)
-      at execSync (node:child_process:963:15)
-      at getVolumeValueFromAmixer (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:29:49)
-      at getCurrentLogPercent (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:56:19)
-      at func (/home/dash/whisplay-ai-chatbot/dist/config/llm-tools.js:72:73)
-      at /home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:126:35
-      at Array.map (<anonymous>)
-      at chatWithLLMStream (/home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:115:57)
-      at processTicksAndRejections (node:internal/process/task_queues:95:5) {
-    status: 1,
-    signal: null,
-    output: [
-      null,
-      <Buffer >,
-      <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
-    ],
-    pid: 24075,
-    stdout: <Buffer >,
-    stderr: <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
-  }
-} reason: Error: Command failed: amixer -c 1 get Speaker
-amixer: Unable to find simple control 'Speaker',0
-
+Connected to battery service
+Error starting Python process: Error: Command failed: cd /home/dash/ai-pi/python && sudo python3 chatbot-ui.py
+Traceback (most recent call last):
+  File "/home/dash/ai-pi/python/chatbot-ui.py", line 406, in <module>
+    whisplay = WhisplayBoard()
+  File "/home/dash/ai-pi/python/whisplay.py", line 28, in __init__
+    GPIO.setup([self.DC_PIN, self.RST_PIN, self.LED_PIN], GPIO.OUT)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/RPi/GPIO/__init__.py", line 704, in setup
+    initial = _check(lgpio.gpio_read(_chip, gpio))
+                     ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/usr/lib/python3/dist-packages/lgpio.py", line 903, in gpio_read
+    return _u2i(_lgpio._gpio_read(handle&0xffff, gpio))
+  File "/usr/lib/python3/dist-packages/lgpio.py", line 458, in _u2i
+    raise error(error_text(v))
+lgpio.error: 'GPIO not allocated'
 
     at genericNodeError (node:internal/errors:984:15)
     at wrappedFn (node:internal/errors:538:14)
-    at checkExecSyncError (node:child_process:891:11)
-    at execSync (node:child_process:963:15)
-    at getVolumeValueFromAmixer (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:29:49)
-    at getCurrentLogPercent (/home/dash/whisplay-ai-chatbot/dist/utils/volume.js:56:19)
-    at func (/home/dash/whisplay-ai-chatbot/dist/config/llm-tools.js:72:73)
-    at /home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:126:35
-    at Array.map (<anonymous>)
-    at chatWithLLMStream (/home/dash/whisplay-ai-chatbot/dist/cloud-api/openai-llm.js:115:57)
-    at processTicksAndRejections (node:internal/process/task_queues:95:5) {
-  status: 1,
+    at ChildProcess.exithandler (node:child_process:422:12)
+    at ChildProcess.emit (node:events:524:28)
+    at ChildProcess.emit (node:domain:489:12)
+    at maybeClose (node:internal/child_process:1104:16)
+    at Process.ChildProcess._handle.onexit (node:internal/child_process:304:5) {
+  code: 1,
+  killed: false,
   signal: null,
-  output: [
-    null,
-    <Buffer >,
-    <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
-  ],
-  pid: 24075,
-  stdout: <Buffer >,
-  stderr: <Buffer 61 6d 69 78 65 72 3a 20 55 6e 61 62 6c 65 20 74 6f 20 66 69 6e 64 20 73 69 6d 70 6c 65 20 63 6f 6e 74 72 6f 6c 20 27 53 70 65 61 6b 65 72 27 2c 30 0a ... 1 more byte>
+  cmd: 'cd /home/dash/ai-pi/python && sudo python3 chatbot-ui.py'
 }
-Cleaning up display process before exit...
-Killing Python process... 23225
-Cleaning up display process before exit...
-error Command failed with exit code 1.
-info Visit https://yarnpkg.com/en/docs/cli/run for documentation about this command.
+[2025-11-22 22:21:31] Received data from Whisplay hat: OK
+
+[2025-11-22 22:21:32] Received data from Whisplay hat: OK
+
+[Telegram] Chat ID found: 6619533981 (from Darren)
+[Telegram] Received command: Send a message to SAMU testing from Optidex
+[ChatFlow] Received Telegram message: Send a message to SAMU testing from Optidex
+send data: {"status":"recognizing","text":"Send a message to SAMU testing from Optidex","brightness":100}
+[2025-11-22 22:22:30] switch to: answer
+[2025-11-22 22:22:30] Received data from Whisplay hat: OK
+
+[2025-11-22 22:22:30] Received data from Whisplay hat: OK
+
+[Meshtastic] Stopping monitor to release port...
+[Meshtastic] Monitor exited (code null)
+[Meshtastic] Monitor process exited.
+[Meshtastic] Running exclusive command: python3 /home/dash/ai-pi/python/meshtastic_client.py send "Message from OptiDex: Testing communication to SAMU" 
+call results:  [
+  [
+    'call_x94kjuXiDiDdP8LVvavq4o4i',
+    'Message sent to Broadcast: "Message from OptiDex: Testing communication to SAMU"'
+  ]
+]
+send data: {"status":"answering","emoji":"😐 🛜","text":"Message sent to SAMU via broadcast. ","RGB":"#0000ff","brightness":100}
+[2025-11-22 22:22:36] Received data from Whisplay hat: OK
+OK
+
+Failed to parse JSON from data
+[Meshtastic] Starting monitor...
+Playing audio 1/1
+Playback duration: 2241
+Playing raw data 'stdin' : Signed 16 bit Little Endian, Rate 24000 Hz, Mono
+
+Audio playback completed
+Play all audio completed. Total: 1
+[ChatFlow] After TTS - visualMode: null
+[ChatFlow] After TTS - latestImg: null
+[2025-11-22 22:22:40] switch to: sleep
+[2025-11-22 22:22:41] Received data from Whisplay hat: OK
+
+[Telegram] Received command: Check messages from mesh
+[ChatFlow] Received Telegram message: Check messages from mesh
+send data: {"status":"recognizing","text":"Check messages from mesh","brightness":100}
+[2025-11-22 22:25:14] switch to: answer
+[2025-11-22 22:25:14] Received data from Whisplay hat: OK
+
+[2025-11-22 22:25:14] Received data from Whisplay hat: OK
+
+[Meshtastic] Stopping monitor to release port...
+[Meshtastic] Monitor exited (code null)
+[Meshtastic] Monitor process exited.
+[Meshtastic] Running exclusive command: python3 /home/dash/ai-pi/python/meshtastic_client.py read --timeout 10
+call results:  [
+  [
+    'call_ndqJDuyhhfORXiDcWP99NOql',
+    'No new messages received during the listening period.'
+  ]
+]
+send data: {"status":"answering","emoji":"😐 🛜","text":"No new messages detected from the mesh network during the listening period. ","RGB":"#0000ff","brightness":100}
+[2025-11-22 22:25:29] Received data from Whisplay hat: OK
+
+[2025-11-22 22:25:29] Received data from Whisplay hat: OK
+
+[Meshtastic] Starting monitor...
+Playing audio 1/1
+Playback duration: 4017
+Audio playback completed
+Play all audio completed. Total: 1
+[ChatFlow] After TTS - visualMode: null
+[ChatFlow] After TTS - latestImg: null
+[2025-11-22 22:25:35] switch to: sleep
+[2025-11-22 22:25:36] Received data from Whisplay hat: OK
+
+[Telegram] Received command: List nodes
+[ChatFlow] Received Telegram message: List nodes
+send data: {"status":"recognizing","text":"List nodes","brightness":100}
+[2025-11-22 22:28:42] switch to: answer
+[2025-11-22 22:28:42] Received data from Whisplay hat: OK
+
+[Meshtastic] Stopping monitor to release port...
+[Meshtastic] Monitor exited (code null)
+[Meshtastic] Monitor process exited.
+[2025-11-22 22:28:43] Received data from Whisplay hat: OK
+
+[Meshtastic] Running exclusive command: python3 /home/dash/ai-pi/python/meshtastic_client.py nodes
+call results:  [
+  [
+    'call_6daAKWmlLwnKIuW17J9YXO7i',
+    '- Meshtastic 9c9a (9c9a): SNR N/A, Bat 101%, Last Heard 0m ago\n' +
+      '- Meshtastic 5ea0 (5ea0): SNR 6.5, Bat 39%, Last Heard 3m ago\n' +
+      '- Meshtastic 5c10 (5c10): SNR 5.75, Bat 52%, Last Heard 149927m ago'
+  ]
+]
+send data: {"status":"answering","emoji":"😐 🛜","text":"Nodes currently visible on the mesh network:1. ","RGB":"#0000ff","brightness":100}
+send data: {"text":"Nodes currently visible on the mesh network:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2. ","brightness":100}
+send data: {"text":"Nodes currently visible on the mesh network:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6. ","brightness":100}
+send data: {"text":"Nodes currently visible on the mesh network:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6.  5 - Battery:39% - Last heard:3 minutes ago3. ","brightness":100}
+send data: {"text":"Nodes currently visible on the mesh network:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6.  5 - Battery:39% - Last heard:3 minutes ago3.  **Meshtastic5c10**: - SNR:5. ","brightness":100}
+[2025-11-22 22:28:47] Received data from Whisplay hat: OK
+OK
+OK
+OK
+OK
+
+Failed to parse JSON from data
+send data: {"text":"Nodes currently visible on the mesh network:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6.  5 - Battery:39% - Last heard:3 minutes ago3.  **Meshtastic5c10**: - SNR:5.  75 - Battery:52% - Last heard:149927 minutes agoNote: Node5c10 hasn't been heard from in a long time. ","brightness":100}
+[2025-11-22 22:28:48] Received data from Whisplay hat: OK
+OK
+
+Failed to parse JSON from data
+[Meshtastic] Starting monitor...
+Playing audio 1/6
+Playback duration: 3030
+Audio playback completed
+Playing audio 2/6
+Playback duration: 7663
+Audio playback completed
+Playing audio 3/6
+Playback duration: 3529
+Audio playback completed
+Playing audio 4/6
+Playback duration: 4180
+Audio playback completed
+Playing audio 5/6
+Playback duration: 3448
+Audio playback completed
+Playing audio 6/6
+Playback duration: 10391
+Audio playback completed
+Play all audio completed. Total: 6
+[ChatFlow] After TTS - visualMode: null
+[ChatFlow] After TTS - latestImg: null
+[2025-11-22 22:29:33] switch to: sleep
+[2025-11-22 22:29:33] Received data from Whisplay hat: OK
+
+[Telegram] Received command: Scan for nodes again
+[ChatFlow] Received Telegram message: Scan for nodes again
+send data: {"status":"recognizing","text":"Scan for nodes again","brightness":100}
+[2025-11-22 22:33:31] switch to: answer
+[2025-11-22 22:33:31] Received data from Whisplay hat: OK
+
+[2025-11-22 22:33:31] Received data from Whisplay hat: OK
+
+[Meshtastic] Stopping monitor to release port...
+[Meshtastic] Monitor exited (code null)
+[Meshtastic] Monitor process exited.
+[Meshtastic] Running exclusive command: python3 /home/dash/ai-pi/python/meshtastic_client.py nodes
+call results:  [
+  [
+    'call_vWbv7nRZuqXqUhgbcTAPVVuz',
+    '- Meshtastic 9c9a (9c9a): SNR N/A, Bat 101%, Last Heard 0m ago\n' +
+      '- Meshtastic 5ea0 (5ea0): SNR 6.5, Bat 39%, Last Heard 8m ago\n' +
+      '- Meshtastic 5c10 (5c10): SNR 5.75, Bat 52%, Last Heard 149932m ago'
+  ]
+]
+send data: {"status":"answering","emoji":"😐 🛜","text":"Updated node list:1. ","RGB":"#0000ff","brightness":100}
+send data: {"text":"Updated node list:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2. ","brightness":100}
+send data: {"text":"Updated node list:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6. ","brightness":100}
+send data: {"text":"Updated node list:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6.  5 - Battery:39% - Last heard:8 minutes ago3. ","brightness":100}
+send data: {"text":"Updated node list:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6.  5 - Battery:39% - Last heard:8 minutes ago3.  **Meshtastic5c10**: - SNR:5. ","brightness":100}
+[2025-11-22 22:33:37] Received data from Whisplay hat: OK
+
+[2025-11-22 22:33:37] Received data from Whisplay hat: OK
+
+send data: {"text":"Updated node list:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6.  5 - Battery:39% - Last heard:8 minutes ago3.  **Meshtastic5c10**: - SNR:5.  75 - Battery:52% - Last heard:149932 minutes agoNo significant changes. ","brightness":100}
+send data: {"text":"Updated node list:1.  **Meshtastic9c9a**: - SNR: N/A - Battery:101% - Last heard:0 minutes ago2.  **Meshtastic5ea0**: - SNR:6.  5 - Battery:39% - Last heard:8 minutes ago3.  **Meshtastic5c10**: - SNR:5.  75 - Battery:52% - Last heard:149932 minutes agoNo significant changes.  Node5c10 remains out of recent contact. ","brightness":100}
+[Meshtastic] Starting monitor...
+Playing audio 1/7
+Playback duration: 1962
+Audio playback completed
+Playing audio 2/7
+Playback duration: 7593
+Audio playback completed
+Playing audio 3/7
+Playback duration: 3413
+(node:12258) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 data listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:12258) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 data listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(node:12258) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 exit listeners added to [ChildProcess]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+Audio playback completed
+Playing audio 4/7
+Playback duration: 4214
+Audio playback completed
+Playing audio 5/7
+Playback duration: 3286
+Audio playback completed
+Playing audio 6/7
+Playback duration: 8034
+Audio playback completed
+Playing audio 7/7
+Playback duration: 3007
+Audio playback completed
+Play all audio completed. Total: 7
+[ChatFlow] After TTS - visualMode: null
+[ChatFlow] After TTS - latestImg: null
+[2025-11-22 22:34:24] switch to: sleep
+[Telegram] Received command: Message 5ea0 hello testing from the Optidex unit
+[ChatFlow] Received Telegram message: Message 5ea0 hello testing from the Optidex unit
+send data: {"status":"recognizing","text":"Message 5ea0 hello testing from the Optidex unit","brightness":100}
+[2025-11-22 22:34:50] switch to: answer
+[Meshtastic] Stopping monitor to release port...
+[Meshtastic] Monitor exited (code null)
+[Meshtastic] Monitor process exited.
+[Meshtastic] Running exclusive command: python3 /home/dash/ai-pi/python/meshtastic_client.py send "Hello testing from the OptiDex unit" --dest "5ea0"
+call results:  [
+  [
+    'call_bySy0tRworLjA9KwLizv9QIR',
+    'Message sent to 5ea0: "Hello testing from the OptiDex unit"'
+  ]
+]
+send data: {"status":"answering","emoji":"😐 🛜","text":"Message sent to node5ea0: \"Hello testing from the OptiDex unit.\"","RGB":"#0000ff","brightness":100}
+[Meshtastic] Starting monitor...
+Playing audio 1/1
+Playback duration: 4865
+Audio playback completed
+Play all audio completed. Total: 1
+[ChatFlow] After TTS - visualMode: null
+[ChatFlow] After TTS - latestImg: null
+[2025-11-22 22:35:03] switch to: sleep
+[Telegram] Received command: Check messages
+[ChatFlow] Received Telegram message: Check messages
+send data: {"status":"recognizing","text":"Check messages","brightness":100}
+[2025-11-22 22:35:36] switch to: answer
+[Meshtastic] Stopping monitor to release port...
+[Meshtastic] Monitor exited (code null)
+[Meshtastic] Monitor process exited.
+[Meshtastic] Running exclusive command: python3 /home/dash/ai-pi/python/meshtastic_client.py read --timeout 10
+call results:  [
+  [
+    'call_nsajzUuxqAF7ctsJ7lcZyIKk',
+    'No new messages received during the listening period.'
+  ]
+]
+send data: {"status":"answering","emoji":"😐 🛜","text":"No new messages received from the mesh network during the listening period. ","RGB":"#0000ff","brightness":100}
+[Meshtastic] Starting monitor...
+Playing audio 1/1
+Playback duration: 3820
+Audio playback completed
+Play all audio completed. Total: 1
+[ChatFlow] After TTS - visualMode: null
+[ChatFlow] After TTS - latestImg: null
+[2025-11-22 22:35:58] switch to: sleep
+[Meshtastic] Monitor exited (code null)
+[Meshtastic] Monitor crashed or lost connection. Retrying in 5 seconds...
+[Meshtastic] Starting monitor...
+[Telegram] Received command: List the capabilities you have
+[ChatFlow] Received Telegram message: List the capabilities you have
+send data: {"status":"recognizing","text":"List the capabilities you have","brightness":100}
+[2025-11-22 22:45:58] switch to: answer
+send data: {"status":"answering","emoji":"😐 🛜","text":"Here's a rundown of my capabilities:1. ","RGB":"#0000ff","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system.  10. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system.  10.  **Lighting Control**: Switch lights on or off. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system.  10.  **Lighting Control**: Switch lights on or off.  11. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system.  10.  **Lighting Control**: Switch lights on or off.  11.  **Video Analysis**: Analyze video frames to describe content or detect objects. ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system.  10.  **Lighting Control**: Switch lights on or off.  11.  **Video Analysis**: Analyze video frames to describe content or detect objects.  These functions equip me to perform reconnaissance, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system.  10.  **Lighting Control**: Switch lights on or off.  11.  **Video Analysis**: Analyze video frames to describe content or detect objects.  These functions equip me to perform reconnaissance,  communication, ","brightness":100}
+send data: {"text":"Here's a rundown of my capabilities:1.  **Volume Control**: Set,  increase,  or decrease the volume level.  2.  **Image Generation**: Create images based on text prompts.  3.  **Camera Operations**: Take pictures,  record video,  and manage playback.  4.  **Object Detection**: Search and identify objects using the camera,  with specific recognition capabilities.  5.  **Live Object Detection**: Real-time identification with bounding boxes around objects.  6.  **Semantic Sentry Mode**: Trigger alerts for interactions between specified objects.  7.  **Smart Observer**: Monitor for specific objects and provide descriptive information.  8.  **Mesh Network Interaction**: List nodes,  send messages,  and receive messages over Meshtastic mesh networks.  9.  **System Control**: Safely shutdown or reboot the system.  10.  **Lighting Control**: Switch lights on or off.  11.  **Video Analysis**: Analyze video frames to describe content or detect objects.  These functions equip me to perform reconnaissance,  communication,  and environmental monitoring with precision. ","brightness":100}
+Playing audio 1/32
+Playback duration: 2508
+Audio playback completed
+Playing audio 2/32
+Playback duration: 1997
+Audio playback completed
+Playing audio 3/32
+Playback duration: 789
+Audio playback completed
+Playing audio 4/32
+Playback duration: 1753
+Audio playback completed
+Playing audio 5/32
+Playback duration: 499
+Audio playback completed
+Playing audio 6/32
+Playback duration: 3553
+Audio playback completed
+Playing audio 7/32
+Playback duration: 580
+Audio playback completed
+Playing audio 8/32
+Playback duration: 2531
+Audio playback completed
+Playing audio 9/32
+Playback duration: 1115
+Audio playback completed
+Playing audio 10/32
+Playback duration: 1463
+Audio playback completed
+Playing audio 11/32
+Playback duration: 639
+Audio playback completed
+Playing audio 12/32
+Playback duration: 4261
+Audio playback completed
+Playing audio 13/32
+Playback duration: 2403
+Audio playback completed
+Playing audio 14/32
+Playback duration: 615
+Audio playback completed
+Playing audio 15/32
+Playback duration: 5526
+Audio playback completed
+Playing audio 16/32
+Playback duration: 662
+Audio playback completed
+Playing audio 17/32
+Playback duration: 5027
+Audio playback completed
+Playing audio 18/32
+Playback duration: 615
+Audio playback completed
+Playing audio 19/32
+Playback duration: 5178
+Audio playback completed
+Playing audio 20/32
+Playback duration: 569
+Audio playback completed
+Playing audio 21/32
+Playback duration: 2496
+Audio playback completed
+Playing audio 22/32
+Playback duration: 1126
+Audio playback completed
+Playing audio 23/32
+Playback duration: 3100
+Audio playback completed
+Playing audio 24/32
+Playback duration: 615
+Audio playback completed
+Playing audio 25/32
+Playback duration: 3646
+Audio playback completed
+Playing audio 26/32
+Playback duration: 488
+Audio playback completed
+Playing audio 27/32
+Playback duration: 2728
+Audio playback completed
+Playing audio 28/32
+Playback duration: 685
+Audio playback completed
+Playing audio 29/32
+Playback duration: 5921
+Audio playback completed
+Playing audio 30/32
+Playback duration: 2844
+Audio playback completed
+Playing audio 31/32
+Playback duration: 1091
+Audio playback completed
+Playing audio 32/32
+Playback duration: 2322
+Audio playback completed
+Play all audio completed. Total: 32
+[ChatFlow] After TTS - visualMode: null
+[ChatFlow] After TTS - latestImg: null
+[2025-11-22 22:48:07] switch to: sleep

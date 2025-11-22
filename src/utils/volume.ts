@@ -27,12 +27,29 @@ const percentToAmixerValueMap = [
 ];
 
 const getVolumeValueFromAmixer = (): number => {
-  const output = execSync(`amixer -c ${soundCardIndex} get Speaker`).toString();
-  const regex = /Front Left: Playback (\d+) \[(\d+)%\] \[([-\d.]+)dB\]/;
-  const match = output.match(regex);
-  if (match && match[1]) {
-    const volume = parseFloat(match[1]);
-    return volume;
+  try {
+    // Try Speaker first
+    const output = execSync(`amixer -c ${soundCardIndex} get Speaker`).toString();
+    const regex = /Front Left: Playback (\d+) \[(\d+)%\] \[([-\d.]+)dB\]/;
+    const match = output.match(regex);
+    if (match && match[1]) {
+      const volume = parseFloat(match[1]);
+      return volume;
+    }
+  } catch (e) {
+    // Fallback to Master if Speaker fails
+    try {
+      const output = execSync(`amixer -c ${soundCardIndex} get Master`).toString();
+      const regex = /Mono: Playback (\d+) \[(\d+)%\] \[([-\d.]+)dB\]/;
+      const match = output.match(regex);
+      if (match && match[1]) {
+        // Master is usually 0-100, scale it roughly to 0-127
+        const volume = parseFloat(match[1]);
+        return Math.round(volume * 1.27);
+      }
+    } catch (e2) {
+      console.error("Failed to get volume from Speaker or Master", e2);
+    }
   }
   return 0; // Default to min if not found
 };
@@ -77,5 +94,16 @@ export const getCurrentLogPercent = (): number => {
 
 export const setVolumeByAmixer = (logPercent: number): void => {
   const value = logPercentToAmixerValue(logPercent);
-  execSync(`amixer -c ${soundCardIndex} set Speaker ${value}`);
+  try {
+    execSync(`amixer -c ${soundCardIndex} set Speaker ${value}`);
+  } catch (e) {
+    try {
+       // Master typically takes 0-100% or raw values. Let's try % first for safety or fallback to raw if consistent
+       // Map 0-127 to 0-100%
+       const percent = Math.round((value / 127) * 100);
+       execSync(`amixer -c ${soundCardIndex} set Master ${percent}%`);
+    } catch (e2) {
+      console.error("Failed to set volume on Speaker or Master", e2);
+    }
+  }
 };

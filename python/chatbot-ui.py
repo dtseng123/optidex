@@ -1,6 +1,6 @@
 import unicodedata
 import argparse
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageSequence
 import cairosvg
 from io import BytesIO
 import os
@@ -42,8 +42,6 @@ class RenderThread(threading.Thread):
         self.font_path = font_path
         self.fps = fps
         self.render_init_screen()
-        # Clear logo after 1 second and start running loop
-        time.sleep(1)
         self.running = True
         self.main_text_font = ImageFont.truetype(self.font_path, 20)
         self.main_text_line_height = self.main_text_font.getmetrics()[0] + self.main_text_font.getmetrics()[1]
@@ -51,14 +49,56 @@ class RenderThread(threading.Thread):
         self.current_render_text = ""
 
     def render_init_screen(self):
-        # Display logo on startup
-        logo_path = os.path.join("img", "logo.png")
-        if os.path.exists(logo_path):
-            logo_image = Image.open(logo_path).convert("RGBA")
-            logo_image = logo_image.resize((whisplay.LCD_WIDTH, whisplay.LCD_HEIGHT), Image.LANCZOS)
-            rgb565_data = ImageUtils.image_to_rgb565(logo_image, whisplay.LCD_WIDTH, whisplay.LCD_HEIGHT)
-            whisplay.set_backlight(100)
-            whisplay.draw_image(0, 0, whisplay.LCD_WIDTH, whisplay.LCD_HEIGHT, rgb565_data)
+        # Display logo or animated GIF on startup
+        gif_path = os.path.join("img", "logo.gif")
+        png_path = os.path.join("img", "logo.png")
+        
+        if os.path.exists(gif_path):
+            try:
+                with Image.open(gif_path) as im:
+                    # Loop through GIF frames
+                    # Play for roughly 3 seconds or 2 loops
+                    start_time = time.time()
+                    self.whisplay.set_backlight(100)
+                    
+                    # If animated
+                    if getattr(im, "is_animated", False):
+                        # Play for 3 seconds max
+                        while time.time() - start_time < 3:
+                            for frame in ImageSequence.Iterator(im):
+                                # Resize and convert
+                                frame = frame.convert("RGBA")
+                                frame = frame.resize((self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), Image.LANCZOS)
+                                rgb565_data = ImageUtils.image_to_rgb565(frame, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
+                                self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
+                                
+                                # Frame delay
+                                delay = im.info.get('duration', 100) / 1000.0
+                                time.sleep(max(delay, 0.03)) # Cap at ~30fps
+                    else:
+                        # Static GIF
+                        im = im.convert("RGBA")
+                        im = im.resize((self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), Image.LANCZOS)
+                        rgb565_data = ImageUtils.image_to_rgb565(im, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
+                        self.whisplay.set_backlight(100)
+                        self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
+                        time.sleep(3)
+                        
+            except Exception as e:
+                print(f"[Init] Error playing GIF: {e}")
+                # Fallback to static png if GIF fails
+                if os.path.exists(png_path):
+                    self._render_static_logo(png_path)
+        elif os.path.exists(png_path):
+            self._render_static_logo(png_path)
+            
+    def _render_static_logo(self, path):
+        logo_image = Image.open(path).convert("RGBA")
+        logo_image = logo_image.resize((self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), Image.LANCZOS)
+        rgb565_data = ImageUtils.image_to_rgb565(logo_image, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
+        self.whisplay.set_backlight(100)
+        self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
+        time.sleep(1)
 
     def render_frame(self, status, emoji, text, scroll_top, battery_level, battery_color):
         global current_scroll_speed, current_image_path, current_image
