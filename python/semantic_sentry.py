@@ -46,31 +46,50 @@ def check_interaction(box1, box2, threshold=0.1):
 
 def main():
     parser = argparse.ArgumentParser(description="Semantic Sentry - Detect object interactions")
-    parser.add_argument("pairs", nargs='+', help="Pairs of objects to check, format: obj1,obj2 obj3,obj4 (e.g. dog,couch cat,couch)")
+    parser.add_argument("pairs", nargs='+', help="Objects to check. Use --all-combinations to check all pairs, or provide explicit pairs like: obj1,obj2 obj3,obj4")
     parser.add_argument("--threshold", type=float, default=0.1, help="Overlap threshold (0-1)")
     parser.add_argument("--confidence", type=float, default=0.5, help="Detection confidence threshold")
     parser.add_argument("--interval", type=float, default=1.0, help="Check interval in seconds")
     parser.add_argument("--duration", type=int, default=3, help="Number of consecutive detections to trigger")
+    parser.add_argument("--all-combinations", action="store_true", help="Check all pairwise combinations of provided objects")
     
     args = parser.parse_args()
     
     # Parse pairs
-    # Each pair is "obj1,obj2"
     target_pairs = []
     needed_classes = set()
     
-    for p in args.pairs:
-        if ',' in p:
-            o1, o2 = p.split(',')
-            target_pairs.append((o1, o2))
-            needed_classes.add(o1)
-            needed_classes.add(o2)
-        else:
-            print(f"Invalid pair format: {p}. Use obj1,obj2", file=sys.stderr)
-    
-    if not target_pairs:
-        print("No valid pairs provided", file=sys.stderr)
-        sys.exit(1)
+    if args.all_combinations:
+        # Treat all arguments as individual objects and create all pairwise combinations
+        objects = args.pairs
+        needed_classes = set(objects)
+        
+        # Generate all pairwise combinations (including with itself for multiple instances)
+        for i, obj1 in enumerate(objects):
+            for j, obj2 in enumerate(objects):
+                if i < j:  # Avoid duplicate pairs and self-pairs unless same class
+                    target_pairs.append((obj1, obj2))
+                elif i == j and objects.count(obj1) == 1:
+                    # If same object appears once, skip self-pair
+                    continue
+        
+        if not target_pairs:
+            print("Not enough objects for combinations. Provide at least 2 objects with --all-combinations", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Original behavior: parse explicit pairs
+        for p in args.pairs:
+            if ',' in p:
+                o1, o2 = p.split(',')
+                target_pairs.append((o1, o2))
+                needed_classes.add(o1)
+                needed_classes.add(o2)
+            else:
+                print(f"Invalid pair format: {p}. Use obj1,obj2 or use --all-combinations flag", file=sys.stderr)
+        
+        if not target_pairs:
+            print("No valid pairs provided", file=sys.stderr)
+            sys.exit(1)
         
     print(f"Starting Semantic Sentry: Watching {len(target_pairs)} pairs: {target_pairs}", file=sys.stderr)
     

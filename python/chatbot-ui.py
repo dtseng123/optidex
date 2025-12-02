@@ -11,6 +11,7 @@ import json
 import sys
 import threading
 import signal
+import cv2
 
 # from whisplay import WhisplayBoard
 from whisplay import WhisplayBoard
@@ -49,44 +50,50 @@ class RenderThread(threading.Thread):
         self.current_render_text = ""
 
     def render_init_screen(self):
-        # Display logo or animated GIF on startup
-        gif_path = os.path.join("img", "logo.gif")
+        # Display video or logo on startup
+        mp4_path = os.path.join("img", "load.mp4")
         png_path = os.path.join("img", "logo.png")
         
-        if os.path.exists(gif_path):
+        if os.path.exists(mp4_path):
             try:
-                with Image.open(gif_path) as im:
-                    # Loop through GIF frames
-                    # Play for roughly 3 seconds or 2 loops
-                    start_time = time.time()
-                    self.whisplay.set_backlight(100)
+                # Open the video file
+                cap = cv2.VideoCapture(mp4_path)
+                if not cap.isOpened():
+                    raise Exception("Could not open video file")
+                
+                # Get video properties
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                frame_delay = 1.0 / fps if fps > 0 else 0.03
+                
+                self.whisplay.set_backlight(100)
+                
+                # Read and display frames
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break  # End of video
                     
-                    # If animated
-                    if getattr(im, "is_animated", False):
-                        # Play for 3 seconds max
-                        while time.time() - start_time < 3:
-                            for frame in ImageSequence.Iterator(im):
-                                # Resize and convert
-                                frame = frame.convert("RGBA")
-                                frame = frame.resize((self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), Image.LANCZOS)
-                                rgb565_data = ImageUtils.image_to_rgb565(frame, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
-                                self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
-                                
-                                # Frame delay
-                                delay = im.info.get('duration', 100) / 1000.0
-                                time.sleep(max(delay, 0.03)) # Cap at ~30fps
-                    else:
-                        # Static GIF
-                        im = im.convert("RGBA")
-                        im = im.resize((self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), Image.LANCZOS)
-                        rgb565_data = ImageUtils.image_to_rgb565(im, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
-                        self.whisplay.set_backlight(100)
-                        self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
-                        time.sleep(3)
+                    # Convert BGR (OpenCV format) to RGB
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    
+                    # Convert to PIL Image
+                    pil_image = Image.fromarray(frame_rgb).convert("RGBA")
+                    
+                    # Resize to fit display
+                    pil_image = pil_image.resize((self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), Image.LANCZOS)
+                    
+                    # Convert to RGB565 and display
+                    rgb565_data = ImageUtils.image_to_rgb565(pil_image, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
+                    self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
+                    
+                    # Maintain proper frame timing
+                    time.sleep(max(frame_delay, 0.03))  # Cap at ~30fps
+                
+                cap.release()
                         
             except Exception as e:
-                print(f"[Init] Error playing GIF: {e}")
-                # Fallback to static png if GIF fails
+                print(f"[Init] Error playing MP4: {e}")
+                # Fallback to static png if video fails
                 if os.path.exists(png_path):
                     self._render_static_logo(png_path)
         elif os.path.exists(png_path):

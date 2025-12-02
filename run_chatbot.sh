@@ -21,6 +21,9 @@ fi
 # Write our PID
 echo $$ > "$PIDFILE"
 
+# Initialize serve_ollama variable (will be set properly later from .env)
+serve_ollama=false
+
 # Cleanup function to remove PID file on exit
 cleanup() {
   rm -f "$PIDFILE"
@@ -42,8 +45,14 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-# Bluetooth/Pulse audio routing env
-. "/home/dash/whisplay-ai-chatbot/.bluetooth_audio_env.sh"
+# Bluetooth/Pulse audio routing env (check if file exists first)
+if [ -f "/home/dash/optidex/.bluetooth_audio_env.sh" ]; then
+  . "/home/dash/optidex/.bluetooth_audio_env.sh"
+elif [ -f "/home/dash/whisplay-ai-chatbot/.bluetooth_audio_env.sh" ]; then
+  . "/home/dash/whisplay-ai-chatbot/.bluetooth_audio_env.sh"
+else
+  echo "Warning: Bluetooth audio env file not found, skipping..."
+fi
 
 
 # Find the sound card index for wm8960soundcard
@@ -62,7 +71,7 @@ working_dir=$(pwd)
 echo "PATH: $PATH" 
 echo "Python version: $(python3 --version)" 
 echo "Node version: $(node --version)"
-sleep 5
+sleep 2
 # Adjust volume
 amixer -c $card_index set Speaker 114
 # Start the service
@@ -71,7 +80,6 @@ cd $working_dir
 
 # load .env variables, exclude comments and empty lines
 # check if .env file exists
-serve_ollama=false
 if [ -f ".env" ]; then
   # Load only SERVE_OLLAMA from .env (ignore comments/other vars)
   if grep -Eq '^[[:space:]]*SERVE_OLLAMA[[:space:]]*=' .env; then
