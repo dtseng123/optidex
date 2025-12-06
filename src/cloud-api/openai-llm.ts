@@ -5,7 +5,7 @@ import { isEmpty } from "lodash";
 import moment from "moment";
 import {
   shouldResetChatHistory,
-  systemPrompt,
+  getSystemPrompt,
   updateLastMessageTime,
 } from "../config/llm-config";
 import { FunctionCall, Message } from "../type";
@@ -26,7 +26,7 @@ const chatHistoryFileName = `openai_chat_history_${moment().format(
 const messages: Message[] = [
   {
     role: "system",
-    content: systemPrompt,
+    content: getSystemPrompt(),
   },
 ];
 
@@ -34,8 +34,15 @@ const resetChatHistory = (): void => {
   messages.length = 0;
   messages.push({
     role: "system",
-    content: systemPrompt,
+    content: getSystemPrompt(),
   });
+};
+
+// Update system prompt with current context before each call
+const updateSystemPrompt = (): void => {
+  if (messages.length > 0 && messages[0].role === "system") {
+    messages[0].content = getSystemPrompt();
+  }
 };
 
 const chatWithLLMStream: ChatWithLLMStreamFunction = async (
@@ -51,6 +58,8 @@ const chatWithLLMStream: ChatWithLLMStreamFunction = async (
   if (shouldResetChatHistory()) {
     resetChatHistory();
   }
+  // Update system prompt with current context (e.g., active exercise session)
+  updateSystemPrompt();
   updateLastMessageTime();
   let endResolve: () => void = () => {};
   const promise = new Promise<void>((resolve) => {

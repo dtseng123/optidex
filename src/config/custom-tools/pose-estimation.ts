@@ -10,6 +10,23 @@ const STATE_FILE = "/tmp/pose_state.json";
 
 let poseProcess: any = null;
 
+// Helper to stop pose detection and release camera
+export const stopPoseAndReleaseCamera = async (): Promise<boolean> => {
+  if (poseProcess) {
+    console.log("[PoseEstimation] Stopping to release camera...");
+    poseProcess.kill('SIGTERM');
+    poseProcess = null;
+    if (fs.existsSync(STATE_FILE)) {
+      fs.unlinkSync(STATE_FILE);
+    }
+    // Wait for camera to be released
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    console.log("[PoseEstimation] Camera should be released now");
+    return true;
+  }
+  return false;
+};
+
 const poseEstimationTools: LLMTool[] = [
   {
     type: "function",
@@ -156,6 +173,14 @@ const poseEstimationTools: LLMTool[] = [
         poseProcess.stdout.on("data", async (data: Buffer) => {
           const line = data.toString().trim();
           
+          // Audio feedback for "down" state
+          if (line.includes("JSON_AUDIO:down")) {
+            console.log(`[ExerciseCounter] Down detected`);
+            ttsProcessor("down").catch(e => 
+              console.error("[ExerciseCounter] TTS error:", e)
+            );
+          }
+          
           // Rep progress updates
           if (line.includes("JSON_PROGRESS:")) {
             try {
@@ -165,8 +190,10 @@ const poseEstimationTools: LLMTool[] = [
               
               console.log(`[ExerciseCounter] Rep ${currentCount}${progress.goal ? `/${progress.goal}` : ''}`);
               
-              // Optional: Send real-time updates to display
-              // Could update LCD to show current count
+              // Speak the count out loud (non-blocking so pose detection continues smoothly)
+              ttsProcessor(currentCount.toString()).catch(e => 
+                console.error("[ExerciseCounter] TTS error:", e)
+              );
               
             } catch (e) {
               console.error("Error parsing progress:", e);
@@ -190,10 +217,15 @@ const poseEstimationTools: LLMTool[] = [
                 // 2. Send to Telegram
                 telegramBot.sendMessage(message);
                 
-                // Stop the process
+                // Stop the process gracefully
                 if (poseProcess) {
-                  poseProcess.kill();
-                  poseProcess = null;
+                  console.log("[ExerciseCounter] Stopping pose process...");
+                  poseProcess.kill('SIGTERM');
+                  // Wait a bit for cleanup
+                  setTimeout(() => {
+                    poseProcess = null;
+                    console.log("[ExerciseCounter] Pose process stopped, camera released");
+                  }, 1000);
                 }
               }
               
@@ -221,31 +253,48 @@ const poseEstimationTools: LLMTool[] = [
     type: "function",
     function: {
       name: "stopPoseDetection",
-      description: "Stop the currently running pose detection or exercise counter.",
+      description: "Stop the currently running pose detection or exercise counter. Call this when the user says they are 'done', 'finished', 'stop', 'that's enough', 'I'm done exercising', or any similar phrase indicating they want to end the exercise session.",
       parameters: {},
     },
     func: async () => {
       if (poseProcess) {
-        // Check if we were counting
+        // Read state BEFORE killing process
         let finalMessage = "Pose detection stopped.";
+        let reps = 0;
+        let exercise = "exercise";
+        let goal = 0;
         
         if (fs.existsSync(STATE_FILE)) {
           try {
             const stateContent = fs.readFileSync(STATE_FILE, 'utf-8');
             const state = JSON.parse(stateContent);
-            
-            if (state.counting && state.reps > 0) {
-              finalMessage = `Exercise counting stopped. You completed ${state.reps} ${state.action}s!`;
-              await ttsProcessor(finalMessage);
-            }
+            reps = state.reps || 0;
+            exercise = state.action || "exercise";
+            goal = state.goal || 0;
+            console.log(`[StopPose] Read state: reps=${reps}, exercise=${exercise}, goal=${goal}`);
           } catch (e) {
-            // Ignore errors reading state
+            console.error("[StopPose] Error reading state:", e);
           }
         }
         
-        poseProcess.kill();
+        // Kill the process
+        poseProcess.kill('SIGTERM');
         poseProcess = null;
+        
+        // Wait for process to exit and release camera
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Delete state file if still exists
         if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
+        
+        // Build final message with ACTUAL count
+        if (reps > 0) {
+          finalMessage = `Exercise counting stopped. You actually completed ${reps} ${exercise}s (goal was ${goal}).`;
+          await ttsProcessor(`You did ${reps} ${exercise}s!`);
+        } else {
+          finalMessage = `Exercise counting stopped. No ${exercise}s were detected.`;
+        }
+        
         return finalMessage;
       } else {
         return "Pose detection was not running.";

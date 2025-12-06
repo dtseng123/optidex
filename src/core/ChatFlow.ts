@@ -59,26 +59,26 @@ class ChatFlow {
       this.setCurrentFlow("answer");
     });
 
-    // Listen for Meshtastic messages
-    startMeshtasticMonitor((msg: any) => {
-       console.log("[ChatFlow] Received Meshtastic message:", msg);
-       
-       // Format message for TTS
-       const spokenText = `New message from ${msg.from}: ${msg.text}`;
-       
-       // If visual mode active, stop it
-       if (isVisualModeActive()) {
-           this.stopVisualMode();
-       }
-       
-       // Display and Speak
-       this.asrText = spokenText;
-       display({ status: "recognizing", text: `Msg from ${msg.from}` });
-       
-       // Trigger answer flow to read it out
-       this.asrText = `I just received a message on the mesh network from ${msg.from}. It says: "${msg.text}". Please read this out to me.`;
-       this.setCurrentFlow("answer");
-    });
+    // Listen for Meshtastic messages (disabled - no device connected)
+    // startMeshtasticMonitor((msg: any) => {
+    //    console.log("[ChatFlow] Received Meshtastic message:", msg);
+    //    
+    //    // Format message for TTS
+    //    const spokenText = `New message from ${msg.from}: ${msg.text}`;
+    //    
+    //    // If visual mode active, stop it
+    //    if (isVisualModeActive()) {
+    //        this.stopVisualMode();
+    //    }
+    //    
+    //    // Display and Speak
+    //    this.asrText = spokenText;
+    //    display({ status: "recognizing", text: `Msg from ${msg.from}` });
+    //    
+    //    // Trigger answer flow to read it out
+    //    this.asrText = `I just received a message on the mesh network from ${msg.from}. It says: "${msg.text}". Please read this out to me.`;
+    //    this.setCurrentFlow("answer");
+    // });
 
     this.streamResponser = new StreamResponser(
       ttsProcessor,

@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
+from picamera2 import Picamera2
 
 # Configuration
 MODEL_PATH = "yolo11n-pose.pt"  # YOLO11 - latest and most efficient
@@ -82,19 +83,26 @@ def analyze_pose(keypoints, action="detect"):
     # Exercise detection states
     elif action == "pushup":
         # Push-up: arms extended (up) vs bent (down)
-        # Check if elbows, shoulders, and wrists are visible
-        if (left_shoulder[2] > 0.3 and left_elbow[2] > 0.3 and left_wrist[2] > 0.3 and
-            right_shoulder[2] > 0.3 and right_elbow[2] > 0.3 and right_wrist[2] > 0.3):
+        # Check if at least ONE arm is visible (more lenient)
+        left_visible = left_shoulder[2] > 0.3 and left_elbow[2] > 0.3
+        right_visible = right_shoulder[2] > 0.3 and right_elbow[2] > 0.3
+        
+        if left_visible or right_visible:
+            # Calculate arm bend for visible arms
+            left_arm_bent = abs(left_shoulder[1] - left_elbow[1]) > 50 if left_visible else False
+            right_arm_bent = abs(right_shoulder[1] - right_elbow[1]) > 50 if right_visible else False
             
-            # Calculate arm angle (shoulder-elbow-wrist)
-            # If arms are straight, angle is ~180°, if bent ~90°
-            left_arm_bent = abs(left_shoulder[1] - left_elbow[1]) > 50
-            right_arm_bent = abs(right_shoulder[1] - right_elbow[1]) > 50
-            
-            if left_arm_bent and right_arm_bent:
-                results["state"] = "down"
-            else:
-                results["state"] = "up"
+            # Use whichever arm is visible, or both if both visible
+            if left_visible and right_visible:
+                # Both visible - require at least one bent for "down"
+                if left_arm_bent or right_arm_bent:
+                    results["state"] = "down"
+                else:
+                    results["state"] = "up"
+            elif left_visible:
+                results["state"] = "down" if left_arm_bent else "up"
+            else:  # right_visible
+                results["state"] = "down" if right_arm_bent else "up"
     
     elif action == "squat":
         # Squat: standing (knees straight) vs crouched (knees bent)
@@ -157,15 +165,13 @@ def main():
         print("Model will auto-download on first use...", file=sys.stderr)
         sys.exit(1)
     
-    # Initialize Camera
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Error: Could not open camera", file=sys.stderr)
-        sys.exit(1)
-    
-    # Set resolution
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # Initialize Camera using picamera2 (required for Pi 5)
+    picam2 = Picamera2()
+    config = picam2.create_preview_configuration(main={"size": (1280, 720), "format": "RGB888"})
+    picam2.configure(config)
+    picam2.start()
+    print("Camera started with picamera2", file=sys.stderr)
+    time.sleep(1)  # Let camera warm up
     
     consecutive_detections = 0
     
@@ -204,11 +210,10 @@ def main():
                 print(f"JSON_TRIGGER:{json.dumps(trigger_data)}", flush=True)
                 break
             
-            ret, frame = cap.read()
-            if not ret:
-                print("Error reading frame", file=sys.stderr)
-                time.sleep(1)
-                continue
+            # Capture frame from picamera2
+            frame = picam2.capture_array()
+            # Convert RGB to BGR for OpenCV/YOLO
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             
             # Run pose detection
             results = model(frame, verbose=False, conf=args.confidence)
@@ -239,35 +244,36 @@ def main():
                                 if is_exercise and args.count and "state" in analysis:
                                     current_state = analysis["state"]
                                     
-                                    # Confirm state change (avoid noise)
+                                    # Debug output
+                                    print(f"[DEBUG] State: {current_state}, Last: {last_state}", file=sys.stderr)
+                                    
+                                    # Audio feedback for state changes
                                     if current_state != last_state:
-                                        if not state_confirmed:
-                                            state_confirmed = True
-                                        else:
-                                            # State changed and confirmed
-                                            # Count a rep on transition from down to up
-                                            if last_state == "down" and current_state == "up":
-                                                rep_count += 1
-                                                print(f"Rep {rep_count} completed!", file=sys.stderr)
-                                                
-                                                # Update state file
-                                                state_data["reps"] = rep_count
-                                                with open(STATE_FILE, "w") as f:
-                                                    json.dump(state_data, f)
-                                                
-                                                # Send progress update
-                                                progress_data = {
-                                                    "event": "rep_counted",
-                                                    "action": args.action,
-                                                    "reps": rep_count,
-                                                    "goal": args.goal
-                                                }
-                                                print(f"JSON_PROGRESS:{json.dumps(progress_data)}", flush=True)
-                                            
-                                            last_state = current_state
-                                            state_confirmed = False
-                                    else:
-                                        state_confirmed = False
+                                        if current_state == "down" and last_state is not None:
+                                            # Notify going down
+                                            print(f"JSON_AUDIO:down", flush=True)
+                                    
+                                    # Count a rep when transitioning from down to up
+                                    if last_state == "down" and current_state == "up":
+                                        rep_count += 1
+                                        print(f"Rep {rep_count} completed!", file=sys.stderr)
+                                        
+                                        # Update state file
+                                        state_data["reps"] = rep_count
+                                        with open(STATE_FILE, "w") as f:
+                                            json.dump(state_data, f)
+                                        
+                                        # Send progress update with count for audio
+                                        progress_data = {
+                                            "event": "rep_counted",
+                                            "action": args.action,
+                                            "reps": rep_count,
+                                            "goal": args.goal
+                                        }
+                                        print(f"JSON_PROGRESS:{json.dumps(progress_data)}", flush=True)
+                                    
+                                    # Always update last_state
+                                    last_state = current_state
                         else:
                             # Detect any action
                             for action_type in ["waving", "hands_up", "sitting", "standing"]:
@@ -324,9 +330,17 @@ def main():
             time.sleep(args.interval)
     
     except KeyboardInterrupt:
-        pass
+        print("Interrupted by user", file=sys.stderr)
+    except Exception as e:
+        print(f"Error in pose estimation: {e}", file=sys.stderr)
     finally:
-        cap.release()
+        print("Releasing camera...", file=sys.stderr)
+        try:
+            picam2.stop()
+            picam2.close()
+            print("Camera released successfully", file=sys.stderr)
+        except Exception as e:
+            print(f"Error releasing camera: {e}", file=sys.stderr)
         if os.path.exists(STATE_FILE):
             os.remove(STATE_FILE)
         print("Pose Estimation stopped", file=sys.stderr)

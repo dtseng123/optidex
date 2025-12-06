@@ -7,13 +7,23 @@ import { ttsDir } from "../utils/dir";
 
 dotenv.config();
 
-const piperBinaryPath = process.env.PIPER_BINARY_PATH || "/home/pi/piper/piper"; // Default to tts-1
+const piperBinaryPath = process.env.PIPER_BINARY_PATH || "/home/dash/.local/bin/piper";
 const piperModelPath =
-  process.env.PIPER_MODEL_PATH || "/home/pi/piper/voices/en_US-amy-medium.onnx";
+  process.env.PIPER_MODEL_PATH || "/home/dash/optidex/en_US-hfc_female-medium.onnx";
+
+// Debug: Log piper configuration
+console.log(`[Piper] Binary: ${piperBinaryPath}`);
+console.log(`[Piper] Model: ${piperModelPath}`);
 
 const piperTTS = async (
   text: string
 ): Promise<{ data: Buffer; duration: number }> => {
+  // Guard against empty text - Piper crashes on empty input
+  if (!text || text.trim().length === 0) {
+    console.log("[Piper] Skipping empty text");
+    return { data: Buffer.from([]), duration: 0 };
+  }
+
   return new Promise((resolve, reject) => {
     const tempWavFile = path.join(ttsDir, `piper_${Date.now()}.wav`);
     const piperProcess = spawn(piperBinaryPath, [

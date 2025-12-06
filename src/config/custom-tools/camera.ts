@@ -6,6 +6,7 @@ import { imageDir } from "../../utils/dir";
 import { setLatestGenImg } from "../../utils/image";
 import { telegramBot } from "../../utils/telegram";
 import fs from "fs";
+import { stopPoseAndReleaseCamera } from "./pose-estimation";
 
 const execAsync = promisify(exec);
 
@@ -22,6 +23,12 @@ const cameraTools: LLMTool[] = [
     },
     func: async (params) => {
       try {
+        // Stop pose detection if running to release the camera
+        const wasRunning = await stopPoseAndReleaseCamera();
+        if (wasRunning) {
+          console.log("Stopped pose detection to use camera");
+        }
+
         const fileName = `camera-${Date.now()}.jpg`;
         const imagePath = path.join(imageDir, fileName);
 

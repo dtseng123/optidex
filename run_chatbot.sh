@@ -1,6 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+# Ensure whisper and other user-installed binaries are in PATH
+export PATH="/home/dash/.local/bin:$PATH"
+
+# Force both input and output to use PipeWire (pulse) for reliable audio routing
+export AUDIO_INPUT_DEVICE="pulse"
+export AUDIO_OUTPUT_DEVICE="pulse"
+
 # PID file location
 PIDFILE="/tmp/whisplay_chatbot.pid"
 
@@ -103,7 +110,19 @@ if [ "$serve_ollama" = true ]; then
   ollama serve &
 fi
 
-exit_code=0
-SOUND_CARD_INDEX="$card_index" yarn start || exit_code=$?
+# Start Python UI first in background
+echo "Starting Python UI..."
+cd /home/dash/optidex/python && sudo python3 chatbot-ui.py &
+PYTHON_PID=$!
 
-exit $exit_code
+# Wait for Python UI to start
+sleep 5
+
+# Start Node.js backend
+cd /home/dash/optidex
+echo "Starting Node.js backend with sound card index: $card_index"
+SOUND_CARD_INDEX="$card_index" yarn start &
+NODE_PID=$!
+
+# Wait for both processes
+wait $PYTHON_PID $NODE_PID

@@ -4,3 +4,5 @@ numpy
 spidev
 ultralytics
 git+https://github.com/openai/CLIP.git
+meshtastic
+pypubsub
