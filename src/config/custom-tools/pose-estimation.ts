@@ -4,27 +4,94 @@ import path from "path";
 import fs from "fs";
 import { telegramBot } from "../../utils/telegram";
 import { ttsProcessor } from "../../cloud-api/server";
+import { setPendingVisualMode } from "../../utils/image";
 
 const SCRIPT_PATH = path.join(__dirname, "../../../python/pose_estimation.py");
 const STATE_FILE = "/tmp/pose_state.json";
+const POSE_FRAME = "/tmp/whisplay_pose_frame.jpg";
 
 let poseProcess: any = null;
 
 // Helper to stop pose detection and release camera
 export const stopPoseAndReleaseCamera = async (): Promise<boolean> => {
+  let stopped = false;
+  let pidToKill: number | null = null;
+  
+  // Signal stop via state file removal
+  if (fs.existsSync(STATE_FILE)) {
+    // Try to read the PID so we can force-stop if it doesn't exit promptly.
+    try {
+      const stateContent = fs.readFileSync(STATE_FILE, "utf-8");
+      const state = JSON.parse(stateContent);
+      if (typeof state?.pid === "number") {
+        pidToKill = state.pid;
+      }
+    } catch (e) {
+      // ignore parse errors; we'll fall back to just unlinking the state file
+    }
+
+    console.log("[PoseEstimation] Stopping via state file removal...");
+    fs.unlinkSync(STATE_FILE);
+    stopped = true;
+  }
+  
+  // Also kill legacy process if it exists
   if (poseProcess) {
-    console.log("[PoseEstimation] Stopping to release camera...");
+    console.log("[PoseEstimation] Killing legacy process...");
     poseProcess.kill('SIGTERM');
     poseProcess = null;
-    if (fs.existsSync(STATE_FILE)) {
-      fs.unlinkSync(STATE_FILE);
-    }
-    // Wait for camera to be released
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    console.log("[PoseEstimation] Camera should be released now");
-    return true;
+    stopped = true;
   }
-  return false;
+  
+  if (stopped) {
+    // If the pose process doesn't exit quickly, force-stop it so picamera2 releases /dev/media*.
+    if (pidToKill) {
+      const isAlive = (pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      };
+
+      try {
+        if (isAlive(pidToKill)) {
+          console.log(`[PoseEstimation] Sending SIGTERM to PID ${pidToKill}...`);
+          process.kill(pidToKill, "SIGTERM");
+        }
+      } catch (e) {
+        // ignore permission/race errors
+      }
+
+      const start = Date.now();
+      while (isAlive(pidToKill) && Date.now() - start < 3000) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+
+      try {
+        if (isAlive(pidToKill)) {
+          console.warn(`[PoseEstimation] PID ${pidToKill} still alive; sending SIGKILL...`);
+          process.kill(pidToKill, "SIGKILL");
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Wait briefly for camera to be released
+    await new Promise(resolve => setTimeout(resolve, 750));
+    console.log("[PoseEstimation] Camera should be released now");
+    
+    // Clean up frame file
+    if (fs.existsSync(POSE_FRAME)) {
+      try {
+        fs.unlinkSync(POSE_FRAME);
+      } catch(e) {}
+    }
+  }
+  
+  return stopped;
 };
 
 const poseEstimationTools: LLMTool[] = [
@@ -49,8 +116,8 @@ const poseEstimationTools: LLMTool[] = [
       try {
         const { action } = params;
 
+        // Kill any existing pose process
         if (poseProcess) {
-          // Kill existing
           try {
             poseProcess.kill();
           } catch(e) {}
@@ -60,60 +127,22 @@ const poseEstimationTools: LLMTool[] = [
         // Remove state file if exists
         if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
 
-        const args = [
-          SCRIPT_PATH,
-          "--action", action || "detect",
-          "--visualize"  // Draw skeleton on saved images
-        ];
+        console.log(`[Tool] Preparing pose detection for action: ${action}`);
 
-        poseProcess = spawn("python3", args);
-        
-        console.log(`[PoseEstimation] Started for action: ${action}`);
-        
-        poseProcess.stdout.on("data", async (data: Buffer) => {
-          const line = data.toString().trim();
-          if (line.includes("JSON_TRIGGER:")) {
-            try {
-              const jsonStr = line.split("JSON_TRIGGER:")[1];
-              const event = JSON.parse(jsonStr);
-              
-              console.log(`[PoseEstimation] Triggered:`, event);
-              
-              let message = `👋 Alert: I detected someone ${event.action}!`;
-              
-              // Add details
-              if (event.details) {
-                if (event.details.hand) {
-                  message += ` (${event.details.hand} hand)`;
-                }
-              }
-              
-              // 1. Speak alert
-              await ttsProcessor(message);
-              
-              // 2. Send to Telegram
-              telegramBot.sendMessage(message);
-              if (event.image_path && fs.existsSync(event.image_path)) {
-                telegramBot.sendPhoto(event.image_path);
-              }
-              
-            } catch (e) {
-              console.error("Error parsing pose trigger:", e);
-            }
-          }
-        });
-
-        poseProcess.stderr.on("data", (data: Buffer) => {
-          const msg = data.toString().trim();
-          if (msg.startsWith("Starting") || msg.startsWith("Action") || msg.startsWith("Model")) {
-            console.log(`[Pose Log]: ${msg}`);
-          }
+        // Use the visual mode system so frames appear on display
+        setPendingVisualMode({
+          type: 'pose',
+          framePath: POSE_FRAME,
+          poseScript: SCRIPT_PATH,
+          poseAction: action || "detect",
+          poseCount: false,
+          poseGoal: undefined,
         });
 
         const actionDesc = action === "detect" ? "any pose or action" : action;
-        return `Pose detection started. I am watching for: ${actionDesc}.`;
+        return `[success]Starting pose detection for: ${actionDesc}. Watch the display for the camera view with skeleton overlay.`;
       } catch (error: any) {
-        return `Error starting pose detection: ${error.message}`;
+        return `[error]Failed to start pose detection: ${error.message}`;
       }
     },
   },
@@ -121,18 +150,22 @@ const poseEstimationTools: LLMTool[] = [
     type: "function",
     function: {
       name: "startExerciseCounter",
-      description: "Count exercise repetitions in real-time. Tracks push-ups, squats, or pull-ups and counts each complete rep. Optionally set a goal to stop when reached.",
+      description: "Count exercise repetitions in real-time. Tracks push-ups, squats, or pull-ups and counts each complete rep. Optionally set a goal to stop when reached. Can also record the exercise session.",
       parameters: {
         type: "object",
         properties: {
           exercise: {
             type: "string",
-            enum: ["pushup", "squat", "pullup"],
-            description: "Exercise to count: 'pushup', 'squat', or 'pullup'"
+            enum: ["pushup", "squat", "pullup", "crunch"],
+            description: "Exercise to count: 'pushup', 'squat', 'pullup', or 'crunch'"
           },
           goal: {
             type: "number",
             description: "Target number of reps (optional). If set, counting stops when goal is reached."
+          },
+          record: {
+            type: "boolean",
+            description: "Whether to record a video of the exercise session with pose overlay (default: false)"
           }
         },
         required: ["exercise"],
@@ -140,10 +173,10 @@ const poseEstimationTools: LLMTool[] = [
     },
     func: async (params) => {
       try {
-        const { exercise, goal } = params;
+        const { exercise, goal, record } = params;
 
+        // Kill any existing pose process
         if (poseProcess) {
-          // Kill existing
           try {
             poseProcess.kill();
           } catch(e) {}
@@ -153,99 +186,24 @@ const poseEstimationTools: LLMTool[] = [
         // Remove state file if exists
         if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
 
-        const args = [
-          SCRIPT_PATH,
-          "--action", exercise,
-          "--count",
-          "--visualize"
-        ];
-        
-        if (goal) {
-          args.push("--goal", goal.toString());
-        }
+        console.log(`[Tool] Preparing exercise counter for: ${exercise}${goal ? ` (goal: ${goal})` : ''}${record ? ' (recording)' : ''}`);
 
-        poseProcess = spawn("python3", args);
-        
-        console.log(`[ExerciseCounter] Started counting ${exercise}${goal ? ` (goal: ${goal})` : ''}`);
-        
-        let currentCount = 0;
-        
-        poseProcess.stdout.on("data", async (data: Buffer) => {
-          const line = data.toString().trim();
-          
-          // Audio feedback for "down" state
-          if (line.includes("JSON_AUDIO:down")) {
-            console.log(`[ExerciseCounter] Down detected`);
-            ttsProcessor("down").catch(e => 
-              console.error("[ExerciseCounter] TTS error:", e)
-            );
-          }
-          
-          // Rep progress updates
-          if (line.includes("JSON_PROGRESS:")) {
-            try {
-              const jsonStr = line.split("JSON_PROGRESS:")[1];
-              const progress = JSON.parse(jsonStr);
-              currentCount = progress.reps;
-              
-              console.log(`[ExerciseCounter] Rep ${currentCount}${progress.goal ? `/${progress.goal}` : ''}`);
-              
-              // Speak the count out loud (non-blocking so pose detection continues smoothly)
-              ttsProcessor(currentCount.toString()).catch(e => 
-                console.error("[ExerciseCounter] TTS error:", e)
-              );
-              
-            } catch (e) {
-              console.error("Error parsing progress:", e);
-            }
-          }
-          
-          // Goal reached
-          if (line.includes("JSON_TRIGGER:")) {
-            try {
-              const jsonStr = line.split("JSON_TRIGGER:")[1];
-              const event = JSON.parse(jsonStr);
-              
-              if (event.event === "goal_reached") {
-                console.log(`[ExerciseCounter] Goal reached: ${event.reps} reps!`);
-                
-                const message = `🎉 Great job! You completed ${event.reps} ${exercise}s! Goal reached!`;
-                
-                // 1. Speak congratulations
-                await ttsProcessor(message);
-                
-                // 2. Send to Telegram
-                telegramBot.sendMessage(message);
-                
-                // Stop the process gracefully
-                if (poseProcess) {
-                  console.log("[ExerciseCounter] Stopping pose process...");
-                  poseProcess.kill('SIGTERM');
-                  // Wait a bit for cleanup
-                  setTimeout(() => {
-                    poseProcess = null;
-                    console.log("[ExerciseCounter] Pose process stopped, camera released");
-                  }, 1000);
-                }
-              }
-              
-            } catch (e) {
-              console.error("Error parsing trigger:", e);
-            }
-          }
-        });
-
-        poseProcess.stderr.on("data", (data: Buffer) => {
-          const msg = data.toString().trim();
-          if (msg.startsWith("Starting") || msg.startsWith("Rep") || msg.startsWith("Goal") || msg.startsWith("Model")) {
-            console.log(`[Exercise Log]: ${msg}`);
-          }
-        });
+        // Use the visual mode system so frames appear on display
+        setPendingVisualMode({
+          type: 'pose',
+          framePath: POSE_FRAME,
+          poseScript: SCRIPT_PATH,
+          poseAction: exercise,
+          poseCount: true,
+          poseGoal: goal,
+          poseRecord: record,
+        } as any);
 
         const goalText = goal ? ` Your goal is ${goal} reps.` : "";
-        return `Exercise counter started for ${exercise}s.${goalText} I'll count each rep!`;
+        const recordText = record ? " I'll also record a video of your workout." : "";
+        return `[success]Starting exercise counter for ${exercise}s.${goalText}${recordText} Watch the display for the camera view with pose tracking!`;
       } catch (error: any) {
-        return `Error starting exercise counter: ${error.message}`;
+        return `[error]Failed to start exercise counter: ${error.message}`;
       }
     },
   },
@@ -257,47 +215,100 @@ const poseEstimationTools: LLMTool[] = [
       parameters: {},
     },
     func: async () => {
+      // Read state BEFORE stopping
+      let finalMessage = "Pose detection stopped.";
+      let reps = 0;
+      let exercise = "exercise";
+      let goal = 0;
+      
+      if (fs.existsSync(STATE_FILE)) {
+        try {
+          const stateContent = fs.readFileSync(STATE_FILE, 'utf-8');
+          const state = JSON.parse(stateContent);
+          reps = state.reps || 0;
+          exercise = state.action || "exercise";
+          goal = state.goal || 0;
+          console.log(`[StopPose] Read state: reps=${reps}, exercise=${exercise}, goal=${goal}`);
+        } catch (e) {
+          console.error("[StopPose] Error reading state:", e);
+        }
+        
+        // Delete state file to signal Python script to stop
+        // (the script checks for STATE_FILE existence in its loop)
+        fs.unlinkSync(STATE_FILE);
+      }
+      
+      // Also kill legacy process if it exists
       if (poseProcess) {
-        // Read state BEFORE killing process
-        let finalMessage = "Pose detection stopped.";
-        let reps = 0;
-        let exercise = "exercise";
-        let goal = 0;
-        
-        if (fs.existsSync(STATE_FILE)) {
-          try {
-            const stateContent = fs.readFileSync(STATE_FILE, 'utf-8');
-            const state = JSON.parse(stateContent);
-            reps = state.reps || 0;
-            exercise = state.action || "exercise";
-            goal = state.goal || 0;
-            console.log(`[StopPose] Read state: reps=${reps}, exercise=${exercise}, goal=${goal}`);
-          } catch (e) {
-            console.error("[StopPose] Error reading state:", e);
-          }
-        }
-        
-        // Kill the process
-        poseProcess.kill('SIGTERM');
+        try {
+          poseProcess.kill('SIGTERM');
+        } catch(e) {}
         poseProcess = null;
+      }
+      
+      // Wait for process to exit and release camera
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Clean up frame file
+      if (fs.existsSync(POSE_FRAME)) {
+        try {
+          fs.unlinkSync(POSE_FRAME);
+        } catch(e) {}
+      }
+      
+      // Build final message with ACTUAL count
+      if (reps > 0) {
+        finalMessage = `Exercise counting stopped. You completed ${reps} ${exercise}s${goal ? ` (goal was ${goal})` : ''}.`;
+        await ttsProcessor(`You did ${reps} ${exercise}s!`);
+      } else if (exercise !== "exercise") {
+        finalMessage = `Exercise counting stopped. No ${exercise}s were detected.`;
+      }
+      
+      return finalMessage;
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "playExerciseVideo",
+      description: "Play the most recently recorded exercise video on the display. Use this when the user asks to see their workout video, exercise recording, or proof of their exercise.",
+      parameters: {},
+    },
+    func: async () => {
+      try {
+        const EXERCISE_VIDEO_DIR = path.join(process.env.HOME || "/home/dash", "ai-pi/captures/pose");
         
-        // Wait for process to exit and release camera
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Delete state file if still exists
-        if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
-        
-        // Build final message with ACTUAL count
-        if (reps > 0) {
-          finalMessage = `Exercise counting stopped. You actually completed ${reps} ${exercise}s (goal was ${goal}).`;
-          await ttsProcessor(`You did ${reps} ${exercise}s!`);
-        } else {
-          finalMessage = `Exercise counting stopped. No ${exercise}s were detected.`;
+        // Find most recent exercise video
+        if (!fs.existsSync(EXERCISE_VIDEO_DIR)) {
+          return "[error]No exercise videos found.";
         }
         
-        return finalMessage;
-      } else {
-        return "Pose detection was not running.";
+        const files = fs.readdirSync(EXERCISE_VIDEO_DIR)
+          .filter(f => f.endsWith(".mp4") && f.startsWith("exercise-"))
+          .map(f => ({
+            name: f,
+            path: path.join(EXERCISE_VIDEO_DIR, f),
+            time: fs.statSync(path.join(EXERCISE_VIDEO_DIR, f)).mtime.getTime(),
+          }))
+          .sort((a, b) => b.time - a.time);
+
+        if (files.length === 0) {
+          return "[error]No exercise videos found. Try recording an exercise session first with 'count my pushups and record a video'.";
+        }
+
+        const videoPath = files[0].path;
+        console.log(`[PlayExerciseVideo] Playing: ${videoPath}`);
+
+        // Set pending visual mode for playback
+        setPendingVisualMode({
+          type: 'playback',
+          framePath: videoPath
+        });
+
+        return `[success]Playing your most recent exercise video.`;
+      } catch (error: any) {
+        console.error("Error playing exercise video:", error);
+        return `[error]Failed to play exercise video: ${error.message}`;
       }
     }
   }

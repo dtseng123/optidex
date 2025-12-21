@@ -2,6 +2,7 @@ import { getCurrentTimeTag, splitSentences } from "./../utils/index";
 import { get, noop } from "lodash";
 import { telegramBot } from "../utils/telegram";
 import { startMeshtasticMonitor } from "../config/custom-tools/meshtastic";
+import { gemini, geminiModel } from "../cloud-api/gemini";
 import {
   onButtonPressed,
   onButtonReleased,
@@ -108,6 +109,29 @@ class ChatFlow {
     );
   }
 
+  /**
+   * Inject an externally-recorded audio file (e.g., from ESP32 BLE mic stream)
+   * into the normal ASR -> LLM -> tools pipeline.
+   */
+  handleExternalAudioFile = (audioFilePath: string): void => {
+    try {
+      if (!audioFilePath) return;
+
+      console.log(`[ChatFlow] External audio file received: ${audioFilePath}`);
+
+      // If a visual mode is active, stop it so we can run command handling.
+      if (isVisualModeActive()) {
+        console.log(`[ChatFlow] Stopping visual mode for external audio`);
+        this.stopVisualMode();
+      }
+
+      this.currentRecordFilePath = audioFilePath;
+      this.setCurrentFlow("asr");
+    } catch (e) {
+      console.error("[ChatFlow] handleExternalAudioFile error:", e);
+    }
+  };
+
   partialThinkingCallback = (
     partialThinking: string,
     answerId: number
@@ -154,79 +178,158 @@ class ChatFlow {
       const duration = (visualMode as any).duration;
       const videoPath = (visualMode as any).videoPath;
       
+      // Check if this is Smart Observer or Semantic Sentry
+      const isObserver = detectionScript?.includes('smart_observer');
+      const isSentry = detectionScript?.includes('semantic_sentry');
+      const observerPrompt = (visualMode as any).observerPrompt;
+      const observerRecord = (visualMode as any).observerRecord;
+      const observerContinuous = (visualMode as any).observerContinuous;
+      const sentryPairs = (visualMode as any).sentryPairs;
+      const sentryRecord = (visualMode as any).sentryRecord;
+      
       console.log(`[ChatFlow] ========================================`);
-      console.log(`[ChatFlow] DETECTION MODE - Starting live detection process`);
-      console.log(`[ChatFlow] Detection frame path: ${visualMode.framePath}`);
+      console.log(`[ChatFlow] DETECTION MODE - Starting ${isObserver ? 'Smart Observer' : isSentry ? 'Semantic Sentry' : 'Live Detection'}`);
+      console.log(`[ChatFlow] Frame path: ${visualMode.framePath}`);
       console.log(`[ChatFlow] Target objects:`, targetObjects);
-      console.log(`[ChatFlow] Duration: ${duration ? duration + 's' : 'continuous'}`);
-      console.log(`[ChatFlow] Video output: ${videoPath || 'None'}`);
+      console.log(`[ChatFlow] observerRecord: ${observerRecord}, observerContinuous: ${observerContinuous}`);
+      console.log(`[ChatFlow] sentryRecord: ${sentryRecord}`);
       console.log(`[ChatFlow] Script: ${detectionScript}`);
       console.log(`[ChatFlow] ========================================`);
       
       setLiveDetectionActive(true);
-      this.currentFlowName = "detection";
+      this.currentFlowName = isObserver ? "observer" : isSentry ? "sentry" : "detection";
       
-      // Build detection command args
-      const args = ["start", ...targetObjects];
-      if (duration) {
-        args.push("--duration", String(duration));
-      }
-      if (videoPath) {
-        args.push("--video_out", videoPath);
+      // Build command args based on type
+      let args: string[] = [];
+      
+      if (isObserver) {
+        args = [...targetObjects, "--visualize"];
+        // Default to recording ON unless explicitly disabled
+        if (observerRecord !== false) args.push("--record");
+        // Default to continuous ON for monitoring
+        if (observerContinuous !== false) args.push("--continuous");
+      } else if (isSentry) {
+        args = [...(sentryPairs || []), "--visualize"];
+        // Default to recording ON unless explicitly disabled
+        if (sentryRecord !== false) args.push("--record");
+        // Default to continuous ON for monitoring
+        args.push("--continuous");
+      } else {
+        // Original live_detection
+        args = ["start", ...targetObjects];
+        if (duration) args.push("--duration", String(duration));
+        if (videoPath) args.push("--video_out", videoPath);
       }
       
-      // Start the detection process NOW (just like recording/playback)
+      console.log(`[ChatFlow] Final args:`, args);
+      
+      // Start the detection process
       const { spawn } = require("child_process");
       const detectionProcess = spawn("python3", [detectionScript, ...args]);
-      this.activeVisualProcess = detectionProcess; // Track it for cleanup
+      this.activeVisualProcess = detectionProcess;
       
-      // Track detection start time
-      const detectionStartTime = Date.now();
       let lastDetectionLog = 0;
 
-      detectionProcess.stdout?.on("data", (data: Buffer) => {
-        const msg = data.toString().trim();
+      detectionProcess.stdout?.on("data", async (data: Buffer) => {
+        const lines = data.toString().trim().split('\n');
         
-        // Log detection events (throttled)
-        if (Date.now() - lastDetectionLog > 1000) {
-            console.log(`[Detector]: ${msg}`);
+        for (const line of lines) {
+          // Log periodically
+          if (Date.now() - lastDetectionLog > 2000) {
+            console.log(`[Detector]: ${line}`);
             lastDetectionLog = Date.now();
-        }
-
-        // Check if we should stop based on duration (if provided)
-        // Note: Python script should handle this, but we double check here
-        if (duration && (Date.now() - detectionStartTime) > (duration * 1000 + 1000)) {
-             console.log(`[ChatFlow] Detection duration exceeded, stopping...`);
-             // The exit handler will clean up
+          }
+          
+          // Handle trigger events
+          if (line.includes("JSON_TRIGGER:")) {
+            try {
+              const jsonStr = line.split("JSON_TRIGGER:")[1];
+              const event = JSON.parse(jsonStr);
+              console.log(`[Detector] Trigger:`, event);
+              
+              if (isObserver && event.event === "object_detected") {
+                const message = `Detected ${event.objects?.join(", ")}! (${event.count} total)`;
+                await ttsProcessor(message);
+                telegramBot.sendMessage(`👀 ${message}`);
+                
+                if (event.image_path && fs.existsSync(event.image_path)) {
+                  telegramBot.sendPhoto(event.image_path);
+                  
+                  // AI analysis if prompt provided
+                  if (observerPrompt && gemini) {
+                    try {
+                      const imageBuffer = fs.readFileSync(event.image_path);
+                      const imageBase64 = imageBuffer.toString("base64");
+                      const response = await gemini.models.generateContent({
+                        model: geminiModel,
+                        contents: [{
+                          role: 'user',
+                          parts: [
+                            { text: observerPrompt },
+                            { inlineData: { data: imageBase64, mimeType: "image/jpeg" } }
+                          ]
+                        }]
+                      });
+                      let analysis = "No analysis generated.";
+                      if (response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        analysis = response.candidates[0].content.parts[0].text;
+                      }
+                      telegramBot.sendMessage(`🧠 Analysis: ${analysis}`);
+                    } catch (err: any) {
+                      console.error("Gemini Error:", err);
+                    }
+                  }
+                }
+              } else if (isSentry && event.event === "interaction_detected") {
+                const message = `Alert! ${event.object1} interacting with ${event.object2}! (${event.count} total)`;
+                await ttsProcessor(message);
+                telegramBot.sendMessage(`⚠️ ${message}`);
+                
+                if (event.image_path && fs.existsSync(event.image_path)) {
+                  telegramBot.sendPhoto(event.image_path);
+                }
+              }
+            } catch (e) {
+              console.error("[Detector] Error parsing trigger:", e);
+            }
+          }
+          
+          // Handle video saved event
+          if (line.includes("JSON_VIDEO:")) {
+            try {
+              const jsonStr = line.split("JSON_VIDEO:")[1];
+              const event = JSON.parse(jsonStr);
+              console.log(`[Detector] Video saved:`, event);
+              
+              if (event.video_path && fs.existsSync(event.video_path)) {
+                telegramBot.sendMessage(`🎬 Monitoring video saved!`);
+                telegramBot.sendVideo(event.video_path);
+              }
+            } catch (e) {
+              console.error("[Detector] Error parsing video event:", e);
+            }
+          }
         }
       });
       
       detectionProcess.stderr?.on("data", (data: Buffer) => {
-        console.error(`[Detector ERROR]: ${data.toString().trim()}`);
+        const msg = data.toString().trim();
+        if (msg.includes("Starting") || msg.includes("Using") || msg.includes("Detected") || msg.includes("TRIGGER")) {
+          console.log(`[Detector]: ${msg}`);
+        }
       });
       
       detectionProcess.on("exit", (code: number) => {
-        console.log(`[ChatFlow] ----------------------------------------`);
         console.log(`[ChatFlow] Detection process exited with code ${code}`);
-        
-        // Check if a recording was made and send it
-        if (videoPath && fs.existsSync(videoPath)) {
-            const fileSizeBytes = fs.statSync(videoPath).size;
-            const fileSizeMB = (fileSizeBytes / (1024 * 1024)).toFixed(2);
-            console.log(`[ChatFlow] Detection recording saved: ${videoPath} (${fileSizeMB}MB)`);
-            
-            // Send video to Telegram
-            telegramBot.sendVideo(videoPath);
-        }
 
-        // Auto-stop visual mode after detection completes
+        // Auto-stop visual mode
         setTimeout(() => {
           if (this.visualModeInterval) {
             console.log(`[ChatFlow] Cleaning up after detection completion`);
             this.stopVisualMode();
             this.setCurrentFlow("sleep");
           }
-        }, 1000); // Give 1 second to see the last frame
+        }, 1000);
       });
       
       detectionProcess.on("error", (error: Error) => {
@@ -305,6 +408,144 @@ class ChatFlow {
         this.setCurrentFlow("sleep");
       });
       
+    } else if (visualMode.type === 'pose') {
+      const poseScript = (visualMode as any).poseScript;
+      const poseAction = (visualMode as any).poseAction || "detect";
+      const poseCount = (visualMode as any).poseCount;
+      const poseGoal = (visualMode as any).poseGoal;
+      const poseRecord = (visualMode as any).poseRecord;
+      
+      console.log(`[ChatFlow] ========================================`);
+      console.log(`[ChatFlow] POSE MODE - Starting pose estimation process`);
+      console.log(`[ChatFlow] Frame path: ${visualMode.framePath}`);
+      console.log(`[ChatFlow] Action: ${poseAction}`);
+      console.log(`[ChatFlow] Counting: ${poseCount}`);
+      console.log(`[ChatFlow] Goal: ${poseGoal || 'None'}`);
+      console.log(`[ChatFlow] Recording: ${poseRecord || false}`);
+      console.log(`[ChatFlow] Script: ${poseScript}`);
+      console.log(`[ChatFlow] ========================================`);
+      
+      setLiveDetectionActive(true); // Reuse flag for visual mode
+      this.currentFlowName = "pose";
+      
+      // Build pose command args
+      const args = [poseScript, "--action", poseAction, "--visualize"];
+      if (poseCount) {
+        args.push("--count");
+      }
+      if (poseGoal) {
+        args.push("--goal", String(poseGoal));
+      }
+      if (poseRecord) {
+        args.push("--record");
+      }
+      
+      // Start the pose process
+      const { spawn } = require("child_process");
+      const poseProcess = spawn("python3", args);
+      this.activeVisualProcess = poseProcess;
+      
+      poseProcess.stdout?.on("data", (data: Buffer) => {
+        const line = data.toString().trim();
+        
+        // Handle audio feedback for down state
+        if (line.includes("JSON_AUDIO:down")) {
+          console.log(`[Pose] Down detected`);
+          ttsProcessor("down").catch((e: Error) => 
+            console.error("[Pose] TTS error:", e)
+          );
+        }
+        
+        // Handle rep progress updates
+        if (line.includes("JSON_PROGRESS:")) {
+          try {
+            const jsonStr = line.split("JSON_PROGRESS:")[1];
+            const progress = JSON.parse(jsonStr);
+            console.log(`[Pose] Rep ${progress.reps}${progress.goal ? `/${progress.goal}` : ''}`);
+            
+            // Speak the count
+            ttsProcessor(progress.reps.toString()).catch((e: Error) => 
+              console.error("[Pose] TTS error:", e)
+            );
+          } catch (e) {
+            console.error("[Pose] Error parsing progress:", e);
+          }
+        }
+        
+        // Handle goal reached or pose trigger
+        if (line.includes("JSON_TRIGGER:")) {
+          try {
+            const jsonStr = line.split("JSON_TRIGGER:")[1];
+            const event = JSON.parse(jsonStr);
+            
+            if (event.event === "goal_reached") {
+              console.log(`[Pose] Goal reached: ${event.reps} reps!`);
+              const message = `Great job! You completed ${event.reps} ${poseAction}s!`;
+              ttsProcessor(message);
+              telegramBot.sendMessage(`🎉 ${message}`);
+            } else if (event.event === "pose_detected") {
+              console.log(`[Pose] Pose detected:`, event);
+              const message = `I detected someone ${event.action}!`;
+              ttsProcessor(message);
+              telegramBot.sendMessage(`👋 ${message}`);
+              if (event.image_path && fs.existsSync(event.image_path)) {
+                telegramBot.sendPhoto(event.image_path);
+              }
+            }
+          } catch (e) {
+            console.error("[Pose] Error parsing trigger:", e);
+          }
+        }
+        
+        // Handle video saved event
+        if (line.includes("JSON_VIDEO:")) {
+          try {
+            const jsonStr = line.split("JSON_VIDEO:")[1];
+            const event = JSON.parse(jsonStr);
+            
+            if (event.event === "video_saved" && event.video_path) {
+              console.log(`[Pose] Exercise video saved: ${event.video_path}`);
+              const message = `Your ${event.action} workout video with ${event.reps} reps has been saved!`;
+              telegramBot.sendMessage(`🎬 ${message}`);
+              
+              // Send video to Telegram
+              if (fs.existsSync(event.video_path)) {
+                telegramBot.sendVideo(event.video_path);
+              }
+            }
+          } catch (e) {
+            console.error("[Pose] Error parsing video event:", e);
+          }
+        }
+      });
+      
+      poseProcess.stderr?.on("data", (data: Buffer) => {
+        const msg = data.toString().trim();
+        if (msg.includes("Starting") || msg.includes("Rep") || msg.includes("Goal") || msg.includes("Model") || msg.includes("State")) {
+          console.log(`[Pose]: ${msg}`);
+        }
+      });
+      
+      poseProcess.on("exit", (code: number) => {
+        console.log(`[ChatFlow] ----------------------------------------`);
+        console.log(`[ChatFlow] Pose process exited with code ${code}`);
+        
+        // Auto-stop visual mode after pose completes
+        setTimeout(() => {
+          if (this.visualModeInterval) {
+            console.log(`[ChatFlow] Cleaning up after pose completion`);
+            this.stopVisualMode();
+            this.setCurrentFlow("sleep");
+          }
+        }, 1000);
+      });
+      
+      poseProcess.on("error", (error: Error) => {
+        console.error(`[ChatFlow] Pose process error:`, error);
+        this.stopVisualMode();
+        this.setCurrentFlow("sleep");
+      });
+      
     } else if (visualMode.type === 'playback') {
       // isVideoPlaying is already set by setVideoPlaybackMarker
       this.currentFlowName = "videoPlayback";
@@ -367,6 +608,7 @@ class ChatFlow {
       detection: "#00FFFF",  // Cyan
       recording: "#FF0000",  // Red
       playback: "#0000FF",   // Blue
+      pose: "#FF00FF",       // Magenta for pose
     };
     const RGB = colorMap[visualMode.type as keyof typeof colorMap] || "#FFFFFF";
     
@@ -449,7 +691,25 @@ class ChatFlow {
       this.visualModeInterval = null;
     }
     
-    // Kill any active Python visual process (detection/recording/playback)
+    // Signal processes to stop via state file removal
+    const stateFiles = [
+      "/tmp/pose_state.json",
+      "/tmp/observer_state.json",
+      "/tmp/sentry_state.json"
+    ];
+    
+    for (const stateFile of stateFiles) {
+      try {
+        if (fs.existsSync(stateFile)) {
+          fs.unlinkSync(stateFile);
+          console.log(`[ChatFlow] Removed ${stateFile} to signal stop`);
+        }
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+    
+    // Kill any active Python visual process (detection/recording/playback/pose)
     if (this.activeVisualProcess) {
       try {
         console.log(`[ChatFlow] Killing active visual process (PID: ${this.activeVisualProcess.pid})`);
@@ -479,7 +739,10 @@ class ChatFlow {
     const tempFiles = [
       "/tmp/whisplay_current_video_frame.jpg",
       "/tmp/whisplay_video_preview_latest.jpg",
-      "/tmp/whisplay_detection_frame.jpg"
+      "/tmp/whisplay_detection_frame.jpg",
+      "/tmp/whisplay_pose_frame.jpg",
+      "/tmp/whisplay_observer_frame.jpg",
+      "/tmp/whisplay_sentry_frame.jpg"
     ];
     
     tempFiles.forEach(file => {

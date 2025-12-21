@@ -56,6 +56,8 @@ class RenderThread(threading.Thread):
         
         if os.path.exists(mp4_path):
             try:
+                import subprocess
+                
                 # Open the video file
                 cap = cv2.VideoCapture(mp4_path)
                 if not cap.isOpened():
@@ -66,6 +68,18 @@ class RenderThread(threading.Thread):
                 frame_delay = 1.0 / fps if fps > 0 else 0.03
                 
                 self.whisplay.set_backlight(100)
+                
+                # Start audio playback in background (ffplay plays audio from video)
+                audio_process = None
+                try:
+                    audio_process = subprocess.Popen(
+                        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", mp4_path],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    print("[Init] Started video audio playback")
+                except Exception as audio_err:
+                    print(f"[Init] Could not play video audio: {audio_err}")
                 
                 # Read and display frames
                 while True:
@@ -90,6 +104,21 @@ class RenderThread(threading.Thread):
                     time.sleep(max(frame_delay, 0.03))  # Cap at ~30fps
                 
                 cap.release()
+                
+                # Wait for audio to finish if still playing
+                if audio_process:
+                    audio_process.wait()
+                
+                # Play GLaDOS welcome audio after video
+                glados_audio = "/home/dash/optidex/glados_test.wav"
+                if os.path.exists(glados_audio):
+                    try:
+                        print("[Init] Playing GLaDOS welcome audio...")
+                        subprocess.Popen(["aplay", "-q", glados_audio], 
+                                       stdout=subprocess.DEVNULL, 
+                                       stderr=subprocess.DEVNULL)
+                    except Exception as audio_err:
+                        print(f"[Init] Error playing audio: {audio_err}")
                         
             except Exception as e:
                 print(f"[Init] Error playing MP4: {e}")

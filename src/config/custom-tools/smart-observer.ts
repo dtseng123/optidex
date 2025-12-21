@@ -3,113 +3,117 @@ import path from "path";
 import fs from "fs";
 import { telegramBot } from "../../utils/telegram";
 import { gemini, geminiModel } from "../../cloud-api/gemini";
+import { setPendingVisualMode } from "../../utils/image";
+import { ttsProcessor } from "../../cloud-api/server";
 
 const OBSERVER_SCRIPT = path.join(__dirname, "../../../python/smart_observer.py");
-const TRIGGER_FILE = "/tmp/whisplay_trigger_event.json";
+const STATE_FILE = "/tmp/observer_state.json";
+const FRAME_OUTPUT = "/tmp/whisplay_observer_frame.jpg";
+
+let observerProcess: any = null;
 
 const smartObserverTools: LLMTool[] = [
   {
     type: "function",
     function: {
       name: "startSmartObserver",
-      description: "Monitor for a specific object. When found, take a photo, describe it using AI, and send a notification to Telegram. Useful for 'Tell me who comes to my desk' or 'Let me know when the package arrives'.",
+      description: "Monitor for specific objects with live video display. Shows camera feed on screen with detection boxes. When target object is found, takes a photo, analyzes it with AI, and sends notification to Telegram. Can also record the monitoring session.",
       parameters: {
         type: "object",
         properties: {
           objects: {
             type: "array",
             items: { type: "string" },
-            description: "Objects to watch for (e.g., 'person', 'cat', 'bottle')"
+            description: "Objects to watch for (e.g., 'person', 'cat', 'bottle', 'package')"
           },
           prompt: {
             type: "string",
             description: "Question to ask the AI about the object when found (e.g., 'Describe this person', 'Is this package damaged?')"
+          },
+          record: {
+            type: "boolean",
+            description: "Whether to record video while monitoring (default: false)"
+          },
+          continuous: {
+            type: "boolean",
+            description: "Continue watching and saving clips after detections instead of stopping (default: true for monitoring)"
           }
         },
         required: ["objects", "prompt"],
       },
     },
     func: async (params) => {
-      const { objects, prompt } = params;
+      const { objects, prompt, record, continuous } = params;
       
       if (!objects || objects.length === 0) return "[error] No objects specified";
 
-      console.log(`[SmartObserver] Starting watch for: ${objects.join(", ")}`);
+      // Kill any existing observer
+      if (observerProcess) {
+        try {
+          observerProcess.kill();
+        } catch(e) {}
+        observerProcess = null;
+      }
       
-      // Run python script in background
-      const { spawn } = require("child_process");
-      const process = spawn("python3", [OBSERVER_SCRIPT, ...objects]);
-      
-      // Handle output
-      let triggered = false;
-      
-      process.stdout.on("data", async (data: Buffer) => {
-        const line = data.toString().trim();
-        console.log(`[Observer]: ${line}`);
-        
-        if (line.includes("JSON_TRIGGER:") && !triggered) {
-            triggered = true;
-            const jsonStr = line.split("JSON_TRIGGER:")[1];
-            try {
-                const event = JSON.parse(jsonStr);
-                console.log("[SmartObserver] Trigger received!", event);
-                
-                telegramBot.sendMessage(`👀 Smart Observer: Detected ${event.objects.join(", ")}! Analyzing...`);
-                
-                // Send photo to Telegram immediately
-                await telegramBot.sendPhoto(event.image_path);
-                
-                // Send to VLM for analysis
-                if (gemini) {
-                    try {
-                        const imageBuffer = fs.readFileSync(event.image_path);
-                        const imageBase64 = imageBuffer.toString("base64");
-                        
-                        // For single turn generation with image:
-                        const response = await gemini.models.generateContent({
-                            model: geminiModel,
-                            contents: [
-                                {
-                                    role: 'user',
-                                    parts: [
-                                        { text: prompt },
-                                        {
-                                            inlineData: {
-                                                data: imageBase64,
-                                                mimeType: "image/jpeg"
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        });
-                        
-                        // Access text property safely (SDK 1.x)
-                        let analysis = "No analysis generated.";
-                        
-                        if (response && response.candidates && response.candidates[0]) {
-                             const parts = response.candidates[0].content?.parts;
-                             if (parts && parts[0] && parts[0].text) {
-                                 analysis = parts[0].text;
-                             }
-                        }
-                        telegramBot.sendMessage(`🧠 Analysis: ${analysis}`);
-                        
-                    } catch (err: any) {
-                        console.error("Gemini Error:", err);
-                        telegramBot.sendMessage(`Error analyzing image: ${err.message}`);
-                    }
-                }
-                
-            } catch (e) {
-                console.error("Error parsing trigger:", e);
-            }
-        }
-      });
+      // Remove state file if exists
+      if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
 
-      return `[success] Smart Observer started. I am watching for ${objects.join(", ")}. I will notify you on Telegram when I see one.`;
+      console.log(`[SmartObserver] Starting watch for: ${objects.join(", ")}`);
+      console.log(`[SmartObserver] Record: ${record}, Continuous: ${continuous}`);
+
+      // Set pending visual mode for live display
+      setPendingVisualMode({
+        type: 'detection',
+        framePath: FRAME_OUTPUT,
+        detectionScript: OBSERVER_SCRIPT,
+        targetObjects: objects,
+        // Store extra params for ChatFlow
+        observerPrompt: prompt,
+        observerRecord: record,
+        observerContinuous: continuous,
+      } as any);
+
+      const recordText = record ? " I'll also record a video." : "";
+      const modeText = continuous ? " I'll keep watching even after finding something." : "";
+      return `[success]Starting Smart Observer. Watching for ${objects.join(", ")}.${recordText}${modeText} You'll see the live camera feed on the display.`;
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "stopSmartObserver",
+      description: "Stop the Smart Observer monitoring.",
+      parameters: {},
+    },
+    func: async () => {
+      let detections = 0;
+      
+      if (fs.existsSync(STATE_FILE)) {
+        try {
+          const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+          detections = state.detections || 0;
+        } catch(e) {}
+        fs.unlinkSync(STATE_FILE);
+      }
+      
+      if (observerProcess) {
+        observerProcess.kill();
+        observerProcess = null;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      if (fs.existsSync(FRAME_OUTPUT)) {
+        try { fs.unlinkSync(FRAME_OUTPUT); } catch(e) {}
+      }
+      
+      if (detections > 0) {
+        return `Smart Observer stopped. Detected ${detections} time(s).`;
+      }
+      return "Smart Observer stopped.";
     }
   }
 ];
 
 export default smartObserverTools;
+export { observerProcess, OBSERVER_SCRIPT, STATE_FILE, FRAME_OUTPUT };

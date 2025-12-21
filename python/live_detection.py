@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Live object detection with YOLOE on Raspberry Pi 5
-Streams video from camera with detection overlays
+Live object detection with Coral EdgeTPU + YOLO-World fallback
+- EdgeTPU: Fast (~21ms/47FPS) for COCO classes (person, car, bottle, etc.)
+- YOLO-World: Open vocabulary for custom objects (my red backpack, etc.)
 """
 import sys
 import os
@@ -16,16 +17,68 @@ from PIL import Image, ImageDraw, ImageFont
 STATE_FILE = "/tmp/whisplay_detection_state.json"
 FRAME_OUTPUT = "/tmp/whisplay_detection_frame.jpg"
 
-def save_state(target_objects, is_running, detections=None):
+# COCO classes supported by EdgeTPU SSD MobileNet
+COCO_CLASSES = {
+    'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck',
+    'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench',
+    'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra',
+    'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
+    'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove',
+    'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup',
+    'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange',
+    'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
+    'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse',
+    'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink',
+    'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
+    'hair drier', 'toothbrush'
+}
+
+# Try to import EdgeTPU client
+EDGETPU_AVAILABLE = False
+edgetpu_client = None
+
+try:
+    sys.path.insert(0, '/home/dash/coral-models')
+    from edgetpu_client import EdgeTPUClient
+    
+    test_client = EdgeTPUClient()
+    if test_client.ping('detection'):
+        edgetpu_client = test_client
+        EDGETPU_AVAILABLE = True
+        print("[EdgeTPU] Detection server available - using hardware acceleration (~47 FPS)", file=sys.stderr)
+    else:
+        print("[EdgeTPU] Server not responding", file=sys.stderr)
+except ImportError as e:
+    print(f"[EdgeTPU] Client not available: {e}", file=sys.stderr)
+except Exception as e:
+    print(f"[EdgeTPU] Connection failed: {e}", file=sys.stderr)
+
+
+def can_use_edgetpu(target_objects):
+    """Check if all target objects are COCO classes (EdgeTPU compatible)."""
+    if not EDGETPU_AVAILABLE:
+        return False
+    
+    for obj in target_objects:
+        obj_lower = obj.lower().strip()
+        if obj_lower not in COCO_CLASSES:
+            print(f"[EdgeTPU] '{obj}' not in COCO classes, will use YOLO-World", file=sys.stderr)
+            return False
+    return True
+
+
+def save_state(target_objects, is_running, detections=None, backend="unknown"):
     """Save detection state"""
     state = {
         "target_objects": target_objects,
         "is_running": is_running,
         "detections": detections or [],
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        "backend": backend
     }
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
+
 
 def load_state():
     """Load detection state"""
@@ -37,6 +90,7 @@ def load_state():
             pass
     return None
 
+
 def clear_state():
     """Clear detection state"""
     if os.path.exists(STATE_FILE):
@@ -44,18 +98,11 @@ def clear_state():
     if os.path.exists(FRAME_OUTPUT):
         os.remove(FRAME_OUTPUT)
 
+
 def draw_detections(image, detections, target_objects):
-    """
-    Draw detection boxes and labels on image
-    
-    Args:
-        image: PIL Image
-        detections: List of detection dicts with bbox, confidence, class_name
-        target_objects: List of objects we're looking for (highlight these)
-    """
+    """Draw detection boxes and labels on PIL image."""
     draw = ImageDraw.Draw(image)
     
-    # Try to use a decent font, fallback to default
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
         small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
@@ -63,21 +110,19 @@ def draw_detections(image, detections, target_objects):
         font = ImageFont.load_default()
         small_font = font
     
+    target_objects_lower = [obj.lower() for obj in target_objects]
+    
     for det in detections:
-        bbox = det['bbox']  # [x1, y1, x2, y2]
+        bbox = det['bbox']
         confidence = det['confidence']
         class_name = det['class_name']
         
-        # Highlight target objects in green, others in yellow
-        is_target = class_name.lower() in [obj.lower() for obj in target_objects]
-        color = (0, 255, 0) if is_target else (255, 255, 0)  # Green or Yellow
+        is_target = class_name.lower() in target_objects_lower
+        color = (0, 255, 0) if is_target else (255, 255, 0)
         
-        # Draw bounding box
         draw.rectangle(bbox, outline=color, width=3)
         
-        # Draw label background
         label = f"{class_name} {confidence:.2f}"
-        # Get text size - handle both old and new PIL versions
         try:
             bbox_text = draw.textbbox((bbox[0], bbox[1]-20), label, font=small_font)
             text_width = bbox_text[2] - bbox_text[0]
@@ -86,204 +131,194 @@ def draw_detections(image, detections, target_objects):
             text_width, text_height = small_font.getsize(label)
         
         draw.rectangle([bbox[0], bbox[1]-text_height-4, bbox[0]+text_width+4, bbox[1]], fill=color)
-        
-        # Draw label text
         draw.text((bbox[0]+2, bbox[1]-text_height-2), label, fill=(0, 0, 0), font=small_font)
     
     return image
 
-def run_live_detection(target_objects, confidence_threshold=0.3, duration=None, video_out=None):
+
+def run_live_detection(target_objects, confidence_threshold=0.3, duration=None, video_out=None, force_yolo=False):
     """
-    Run live object detection with YOLOE
+    Run live object detection.
     
-    Args:
-        target_objects: List of object names to detect (e.g., ["person", "cup"])
-        confidence_threshold: Minimum confidence for detections (0.0-1.0)
-        duration: How long to run (seconds), None for continuous
-        video_out: Path to save recorded video with detections (optional)
+    Automatically chooses backend:
+    - EdgeTPU (fast) for standard COCO objects
+    - YOLO-World (flexible) for custom/open-vocabulary objects
     """
     try:
-        # Import YOLO (ultralytics)
-        try:
-            from ultralytics import YOLO
-        except ImportError:
-            print("Error: ultralytics not installed. Install with: pip3 install ultralytics", file=sys.stderr)
-            return False
+        # Decide which backend to use
+        use_edgetpu = can_use_edgetpu(target_objects) and not force_yolo
+        backend = "edgetpu" if use_edgetpu else "yolo-world"
         
-        print(f"Loading YOLO-World model for open-vocabulary detection...")
-        # Use YOLO-World for detecting any object via text prompts
-        # yolov8s-world.pt (small) or yolov8m-world.pt (medium) or yolov8l-world.pt (large)
-        # Standard YOLOv8 only detects 80 COCO classes, World models can detect thousands!
-        yolo_model = os.environ.get('YOLO_MODEL', 'yolov8s-world.pt')
-        model = YOLO(yolo_model)  # World model for custom object detection
+        print(f"=" * 50)
+        print(f"Backend: {backend.upper()}")
+        print(f"Objects: {', '.join(target_objects)}")
+        print(f"=" * 50)
         
-        # Set custom classes for YOLO-World (this is how we "prompt" it)
-        print(f"Setting detection classes: {', '.join(target_objects)}")
-        model.set_classes(target_objects)
+        # Initialize YOLO-World if needed
+        model = None
+        if not use_edgetpu:
+            try:
+                from ultralytics import YOLO
+            except ImportError:
+                print("Error: ultralytics not installed", file=sys.stderr)
+                return False
+            
+            print(f"Loading YOLO-World model for open-vocabulary detection...")
+            yolo_model = os.environ.get('YOLO_MODEL', 'yolov8s-world.pt')
+            model = YOLO(yolo_model)
+            model.set_classes(target_objects)
+            print(f"YOLO-World ready!")
         
+        # Initialize camera
         print(f"Starting camera...")
         picam2 = Picamera2()
         
-        # CRITICAL: Use VIDEO configuration (like video recording does) instead of PREVIEW
-        # This properly initializes the camera sensor with dual streams
-        # VIDEO mode provides better image quality and proper exposure
         config = picam2.create_video_configuration(
-            main={"size": (640, 480)},  # Main stream for YOLO processing
-            lores={"size": (320, 240)},  # Lower-res stream (required for video config)
+            main={"size": (640, 480), "format": "RGB888"},  # Explicit RGB format for PIL
+            lores={"size": (320, 240)},
             controls={
-                "FrameRate": 15,  # 15 FPS to keep processing manageable
-                "AeEnable": True,  # Enable auto-exposure
-                "AwbEnable": True,  # Enable auto white balance
-                "Brightness": 0.5,  # Increase brightness by 50% (was 0.2 = too dark)
-                "Contrast": 1.3,  # Increase contrast by 30%
+                "FrameRate": 30 if use_edgetpu else 15,  # Faster FPS with EdgeTPU
+                "AeEnable": True,
+                "AwbEnable": True,
+                "Brightness": 0.5,
+                "Contrast": 1.3,
             }
         )
         picam2.configure(config)
         picam2.start()
         
-        # Give camera EXTRA time to auto-adjust exposure (3 seconds instead of 2)
-        print(f"Warming up camera (auto-exposure adjustment)...", flush=True)
-        time.sleep(3.0)
+        print(f"Warming up camera...", flush=True)
+        time.sleep(2.0)
         print(f"Camera ready!", flush=True)
         
-        # Initialize Video Writer if requested
+        # Video writer
         video_writer = None
         if video_out:
-            print(f"Initializing video recording to: {video_out}")
-            # Define the codec (mp4v is widely supported)
+            print(f"Recording to: {video_out}")
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            # Size must match the frame size we are processing (640x480)
-            video_writer = cv2.VideoWriter(video_out, fourcc, 15.0, (640, 480))
+            fps = 30.0 if use_edgetpu else 15.0
+            video_writer = cv2.VideoWriter(video_out, fourcc, fps, (640, 480))
         
         print(f"Starting live detection for: {', '.join(target_objects)}")
-        print(f"Confidence threshold: {confidence_threshold}")
-        
-        save_state(target_objects, True)
+        save_state(target_objects, True, backend=backend)
         
         start_time = time.time()
         frame_count = 0
+        fps_start = time.time()
         
         while True:
-            # Check if we should stop
             state = load_state()
             if not state or not state.get("is_running"):
                 print("Detection stopped by user")
                 break
             
-            # Check duration limit
             if duration and (time.time() - start_time) > duration:
                 print(f"Duration limit reached ({duration}s)")
                 break
             
             # Capture frame
             frame = picam2.capture_array("main")
+            frame_count += 1
             
-            # DEBUG: Check if frame is black
-            if frame_count == 0:
-                import numpy as np
-                print(f"[DEBUG] Frame shape: {frame.shape}", flush=True)
-                print(f"[DEBUG] Frame dtype: {frame.dtype}", flush=True)
-                print(f"[DEBUG] Frame min: {frame.min()}, max: {frame.max()}, mean: {frame.mean():.2f}", flush=True)
+            # Calculate FPS every 30 frames
+            if frame_count % 30 == 0:
+                elapsed = time.time() - fps_start
+                fps = 30 / elapsed
+                print(f"[PERF] FPS: {fps:.1f} ({backend})", flush=True)
+                fps_start = time.time()
             
-            # Convert to PIL Image for YOLO
             image = Image.fromarray(frame)
-            
-            # Run YOLO detection (detect all objects, filter afterward)
-            results = model(
-                image,
-                conf=confidence_threshold,
-                verbose=False
-            )
-            
-            # Parse detections and filter for target objects
             detections = []
-            target_objects_lower = [obj.lower() for obj in target_objects]
             
-            for result in results:
-                boxes = result.boxes
-                for box in boxes:
-                    x1, y1, x2, y2 = box.xyxy[0].tolist()
-                    conf = float(box.conf[0])
-                    cls_id = int(box.cls[0])
-                    cls_name = result.names[cls_id]
+            if use_edgetpu:
+                # --- EdgeTPU Path ---
+                try:
+                    result = edgetpu_client.detect(image, threshold=confidence_threshold)
                     
-                    # Filter: only keep target objects OR show all if we're looking for rare objects
-                    # This allows both targeted detection and general awareness
-                    is_target = cls_name.lower() in target_objects_lower
-                    
-                    # Always include target objects, optionally include others for context
-                    if is_target or len(target_objects) == 0:
-                        detections.append({
-                            'bbox': [int(x1), int(y1), int(x2), int(y2)],
-                            'confidence': conf,
-                            'class_name': cls_name,
-                            'is_target': is_target
-                        })
+                    if result.get('success'):
+                        all_detections = result.get('detections', [])
+                        target_objects_lower = [obj.lower() for obj in target_objects]
+                        
+                        # Log all detections for debugging (first few frames)
+                        if frame_count <= 5 and all_detections:
+                            print(f"[EdgeTPU] Raw detections: {[d['class_name'] + ':' + str(d['confidence'])[:4] for d in all_detections]}", flush=True)
+                        
+                        for det in all_detections:
+                            class_name = det['class_name']
+                            # Filter for target objects
+                            if class_name.lower() in target_objects_lower:
+                                detections.append({
+                                    'bbox': det['bbox'],
+                                    'confidence': det['confidence'],
+                                    'class_name': class_name,
+                                    'is_target': True
+                                })
+                    elif frame_count <= 3:
+                        print(f"[EdgeTPU] Detection failed: {result}", file=sys.stderr)
+                except Exception as e:
+                    print(f"[EdgeTPU] Error: {e}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc()
             
-            # Draw detections on image
+            else:
+                # --- YOLO-World Path ---
+                results = model(image, conf=confidence_threshold, verbose=False)
+                target_objects_lower = [obj.lower() for obj in target_objects]
+                
+                for result in results:
+                    boxes = result.boxes
+                    for box in boxes:
+                        x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        conf = float(box.conf[0])
+                        cls_id = int(box.cls[0])
+                        cls_name = result.names[cls_id]
+                        
+                        is_target = cls_name.lower() in target_objects_lower
+                        if is_target or len(target_objects) == 0:
+                            detections.append({
+                                'bbox': [int(x1), int(y1), int(x2), int(y2)],
+                                'confidence': conf,
+                                'class_name': cls_name,
+                                'is_target': is_target
+                            })
+            
+            # Draw detections
             if detections:
                 image = draw_detections(image, detections, target_objects)
-                # Log every detection
-                if frame_count % 5 == 0 or frame_count <= 3:
+                if frame_count % 10 == 0 or frame_count <= 3:
                     print(f"[Detection] Frame {frame_count}: Found {len(detections)} objects", flush=True)
-                    for det in detections[:3]:  # Show first 3
+                    for det in detections[:3]:
                         print(f"  - {det['class_name']}: {det['confidence']:.2f}", flush=True)
             else:
-                # Log when no detections
-                if frame_count % 10 == 0 or frame_count <= 3:
+                if frame_count % 30 == 0 or frame_count <= 3:
                     print(f"[Detection] Frame {frame_count}: No objects detected", flush=True)
             
-            # Write to video if recording enabled
+            # Write to video
             if video_writer:
-                # Convert PIL image (RGB) back to OpenCV format (BGR)
-                # Note: image might be RGBA from drawing, ensure RGB first
                 if image.mode == 'RGBA':
                     frame_to_save = np.array(image.convert('RGB'))
                 else:
                     frame_to_save = np.array(image)
-                
-                # RGB to BGR
                 frame_to_save = cv2.cvtColor(frame_to_save, cv2.COLOR_RGB2BGR)
                 video_writer.write(frame_to_save)
-
-            # Save frame for display (ALWAYS save, even without detections - shows live camera feed)
-            # DEBUG: Check image before processing
-            if frame_count == 0:
-                import numpy as np
-                img_array = np.array(image)
-                print(f"[DEBUG] PIL Image mode: {image.mode}, size: {image.size}", flush=True)
-                print(f"[DEBUG] PIL Image array - min: {img_array.min()}, max: {img_array.max()}, mean: {img_array.mean():.2f}", flush=True)
             
-            # CRITICAL FIX: Convert RGBA to RGB BEFORE resizing!
-            # Video recording does this same order and works perfectly
+            # Save frame for display
             if image.mode == 'RGBA':
                 image = image.convert('RGB')
             
-            # Scale to LCD resolution (240x280 for Whisplay display)
-            # This matches the actual display aspect ratio
             image_resized = image.resize((240, 280), Image.LANCZOS)
-            
-            # Save with same quality as video recording (75)
             image_resized.save(FRAME_OUTPUT, "JPEG", quality=75)
             
-            # Log frame saves occasionally
-            if frame_count % 20 == 0 or frame_count == 1:
-                file_size = os.path.getsize(FRAME_OUTPUT)
-                print(f"[Detection] Saved frame #{frame_count} ({file_size} bytes)", flush=True)
+            save_state(target_objects, True, detections, backend=backend)
             
-            # Update state with detections
-            save_state(target_objects, True, detections)
-            
-            frame_count += 1
-            
-            # Small delay to prevent overload
-            time.sleep(0.05)
+            # Smaller delay with EdgeTPU (faster processing)
+            time.sleep(0.02 if use_edgetpu else 0.05)
         
         # Cleanup
         if video_writer:
             video_writer.release()
             print(f"Video saved to: {video_out}")
-            
+        
         picam2.stop()
         picam2.close()
         clear_state()
@@ -298,6 +333,7 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None, 
         clear_state()
         return False
 
+
 def stop_detection():
     """Stop live detection"""
     state = load_state()
@@ -309,25 +345,31 @@ def stop_detection():
         print("No active detection")
         return True
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: live_detection.py <start|stop> [objects...] [--confidence 0.3] [--duration 30] [--video_out path.mp4]")
+        print("Usage: live_detection.py <start|stop> [objects...] [--confidence 0.3] [--duration 30] [--video_out path.mp4] [--force-yolo]")
+        print("")
+        print("Backends:")
+        print("  EdgeTPU (~47 FPS) - Used automatically for COCO classes:")
+        print(f"    {', '.join(sorted(list(COCO_CLASSES)[:20]))}...")
+        print("  YOLO-World (~15 FPS) - Used for custom objects or with --force-yolo")
         print("")
         print("Examples:")
-        print("  live_detection.py start person cup bottle")
-        print("  live_detection.py start hand --confidence 0.5")
-        print("  live_detection.py start person --duration 30 --video_out /tmp/test.mp4")
+        print("  live_detection.py start person cup bottle  # Uses EdgeTPU (fast)")
+        print("  live_detection.py start 'red backpack'     # Uses YOLO-World (open vocab)")
+        print("  live_detection.py start person --force-yolo  # Force YOLO-World")
         print("  live_detection.py stop")
         sys.exit(1)
     
     action = sys.argv[1]
     
     if action == "start":
-        # Parse arguments
         objects = []
         confidence = 0.3
         duration = None
         video_out = None
+        force_yolo = False
         
         i = 2
         while i < len(sys.argv):
@@ -340,6 +382,9 @@ if __name__ == "__main__":
             elif sys.argv[i] == "--video_out" and i + 1 < len(sys.argv):
                 video_out = sys.argv[i + 1]
                 i += 2
+            elif sys.argv[i] == "--force-yolo":
+                force_yolo = True
+                i += 1
             else:
                 objects.append(sys.argv[i])
                 i += 1
@@ -348,7 +393,7 @@ if __name__ == "__main__":
             print("Error: No objects specified to detect")
             sys.exit(1)
         
-        success = run_live_detection(objects, confidence, duration, video_out)
+        success = run_live_detection(objects, confidence, duration, video_out, force_yolo)
         sys.exit(0 if success else 1)
     
     elif action == "stop":
@@ -358,7 +403,3 @@ if __name__ == "__main__":
     else:
         print(f"Error: Unknown action '{action}'")
         sys.exit(1)
-
-
-
-

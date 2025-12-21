@@ -9,7 +9,7 @@ dotenv.config();
 
 const piperBinaryPath = process.env.PIPER_BINARY_PATH || "/home/dash/.local/bin/piper";
 const piperModelPath =
-  process.env.PIPER_MODEL_PATH || "/home/dash/optidex/en_US-hfc_female-medium.onnx";
+  process.env.PIPER_MODEL_PATH || "/home/dash/optidex/glados_piper_medium.onnx";
 
 // Debug: Log piper configuration
 console.log(`[Piper] Binary: ${piperBinaryPath}`);

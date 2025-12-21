@@ -10,7 +10,7 @@ let videoPlaybackMarker = ''
 
 // Visual mode types
 export type VisualMode = {
-  type: 'detection' | 'recording' | 'playback'
+  type: 'detection' | 'recording' | 'playback' | 'pose'
   framePath: string
   // For recording mode:
   videoPath?: string       // Where to save the video
@@ -19,6 +19,11 @@ export type VisualMode = {
   // For detection mode:
   detectionScript?: string // Path to detection script
   targetObjects?: string[] // Objects to detect
+  // For pose mode:
+  poseScript?: string      // Path to pose estimation script
+  poseAction?: string      // Action to detect (e.g., pushup, squat)
+  poseCount?: boolean      // Whether to count reps
+  poseGoal?: number        // Target number of reps
 }
 
 // Pending visual mode (set by tool, retrieved after TTS)
