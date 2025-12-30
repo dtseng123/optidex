@@ -19,6 +19,8 @@ export type VisualMode = {
   // For detection mode:
   detectionScript?: string // Path to detection script
   targetObjects?: string[] // Objects to detect
+  detectionSegmentation?: boolean // Enable segmentation masks (if supported by backend/model)
+  detectionSegModel?: string // Optional segmentation model path/name (e.g. yolov8n-seg.pt)
   // For pose mode:
   poseScript?: string      // Path to pose estimation script
   poseAction?: string      // Action to detect (e.g., pushup, squat)
@@ -90,11 +92,13 @@ export const isLiveDetectionRunning = () => {
 
 // Pending visual mode management
 export const setPendingVisualMode = (mode: VisualMode | null) => {
+  console.log(`[image.ts] setPendingVisualMode called:`, mode?.type || 'null', mode?.framePath || '')
   pendingVisualMode = mode
 }
 
 export const getPendingVisualMode = (): VisualMode | null => {
   const mode = pendingVisualMode
+  console.log(`[image.ts] getPendingVisualMode called, returning:`, mode?.type || 'null')
   pendingVisualMode = null
   return mode
 }

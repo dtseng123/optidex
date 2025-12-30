@@ -13,6 +13,27 @@ const execAsync = promisify(exec);
 // Path to the Python camera capture script
 const CAMERA_SCRIPT = path.join(__dirname, "../../../python/camera_capture.py");
 
+// Serialize camera usage: libcamera/Picamera2 is not robust to concurrent opens,
+// and can also conflict with OpenCV-based vision tools.
+let cameraQueue: Promise<unknown> = Promise.resolve();
+async function withCameraLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = cameraQueue.then(fn, fn);
+  cameraQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function logThrottlingTag(tag: string) {
+  try {
+    const { stdout } = await execAsync("vcgencmd get_throttled");
+    console.log(`[Camera][${tag}] vcgencmd get_throttled: ${stdout.trim()}`);
+  } catch {
+    // ignore if not available
+  }
+}
+
 const cameraTools: LLMTool[] = [
   {
     type: "function",
@@ -22,7 +43,9 @@ const cameraTools: LLMTool[] = [
       parameters: {},
     },
     func: async (params) => {
+      return await withCameraLock(async () => {
       try {
+          await logThrottlingTag("before");
         // Stop pose detection if running to release the camera
         const wasRunning = await stopPoseAndReleaseCamera();
         if (wasRunning) {
@@ -37,7 +60,10 @@ const cameraTools: LLMTool[] = [
         // Use picamera2 via Python script to take a picture
         const command = `python3 ${CAMERA_SCRIPT} ${imagePath} 1024 1024`;
 
-        const { stdout, stderr } = await execAsync(command);
+          const { stdout, stderr } = await execAsync(command, {
+            timeout: 20000,
+            maxBuffer: 10 * 1024 * 1024,
+          });
         
         if (stdout) {
           console.log("Camera output:", stdout);
@@ -59,11 +85,23 @@ const cameraTools: LLMTool[] = [
         telegramBot.sendPhoto(imagePath);
 
         console.log(`Picture saved successfully: ${imagePath}`);
+          await logThrottlingTag("after");
         return `[success]Picture taken and saved.`;
       } catch (error: any) {
+          const message = error?.message || String(error);
         console.error("Error taking picture:", error);
-        return `[error]Failed to take picture: ${error.message}`;
+          if (
+            message.includes("Pipeline handler in use by another process") ||
+            message.includes("Device or resource busy")
+          ) {
+            return `[error]Camera is busy (another process is using libcamera). Stop other vision modes and try again.`;
+          }
+          if (message.includes("timed out") || message.includes("ETIMEDOUT")) {
+            return `[error]Camera capture timed out. The camera may be wedged; try again after a few seconds.`;
+          }
+          return `[error]Failed to take picture: ${message}`;
       }
+      });
     },
   },
 ];

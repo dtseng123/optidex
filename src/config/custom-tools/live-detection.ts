@@ -21,7 +21,10 @@ const liveDetectionTools: LLMTool[] = [
     type: "function",
     function: {
       name: "startLiveDetection",
-      description: "Start live object detection with camera showing real-time bounding boxes around detected objects on the display. Use this when the user wants to see objects being detected in real-time.",
+      description:
+        "Start live object detection with camera showing real-time bounding boxes around detected objects on the display. "
+        + "Optional: enable segmentation overlay. "
+        + "Segmentation works best for 'person' (EdgeTPU DeepLab semantic mask if configured) or COCO objects (YOLO instance masks if a YOLO *seg* model is available).",
       parameters: {
         type: "object",
         properties: {
@@ -31,6 +34,16 @@ const liveDetectionTools: LLMTool[] = [
               type: "string",
             },
             description: "List of objects to detect (e.g., ['person', 'cup', 'phone']). Can detect thousands of objects - try: person, hand, face, cup, bottle, phone, laptop, keyboard, mouse, book, pen, plant, chair, table, door, window, car, dog, cat, bird, etc.",
+          },
+          segmentation: {
+            type: "boolean",
+            description:
+              "Optional: Enable segmentation overlay. For 'person', prefers EdgeTPU DeepLab semantic segmentation if available. Otherwise uses YOLO instance segmentation if a YOLO *seg* model is available (COCO objects only).",
+          },
+          segModel: {
+            type: "string",
+            description:
+              "Optional: Segmentation model file/path (default: YOLO_SEG_MODEL env or 'yolov8n-seg.pt').",
           },
           duration: {
             type: "number",
@@ -42,7 +55,7 @@ const liveDetectionTools: LLMTool[] = [
     },
     func: async (params) => {
       try {
-        const { objects, duration } = params;
+        const { objects, duration, segmentation, segModel } = params;
 
         if (!Array.isArray(objects) || objects.length === 0) {
           return "[error]Please specify at least one object to detect.";
@@ -69,6 +82,8 @@ const liveDetectionTools: LLMTool[] = [
           framePath: DETECTION_FRAME,
           detectionScript: DETECTION_SCRIPT,
           targetObjects: objects,
+          detectionSegmentation: Boolean(segmentation),
+          detectionSegModel: typeof segModel === "string" && segModel.trim() ? segModel.trim() : undefined,
           duration: duration,
           videoPath: videoPath // Pass the video path for recording
         });
@@ -76,12 +91,40 @@ const liveDetectionTools: LLMTool[] = [
         const objectsList = objects.join(", ");
         const durationText = duration ? ` for ${duration} seconds` : " until you say stop";
         
-        return `[success]Starting detection${durationText} for: ${objectsList}. Recording to video.`;
+        const segText = segmentation ? " (with segmentation)" : "";
+        return `[success]Starting detection${segText}${durationText} for: ${objectsList}. Recording to video.`;
       } catch (error: any) {
         console.error("Error starting detection:", error);
         activeDetectionProcess = null;
         return `[error]Failed to start detection: ${error.message}`;
       }
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "startPersonSegmentation",
+      description:
+        "Start live person detection with segmentation overlay. "
+        + "If EdgeTPU DeepLab segmentation server is enabled, it overlays a semantic person mask; otherwise it may fall back to YOLO segmentation if available.",
+      parameters: {
+        type: "object",
+        properties: {
+          duration: {
+            type: "number",
+            description: "Optional: How many seconds to run (default: continuous until stopped)",
+          },
+        },
+      },
+    },
+    func: async (params) => {
+      // Just delegate to startLiveDetection with the right params
+      const duration = params?.duration;
+      return await (liveDetectionTools[0] as any).func({
+        objects: ["person"],
+        segmentation: true,
+        duration,
+      });
     },
   },
 

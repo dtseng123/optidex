@@ -219,6 +219,12 @@ class ChatFlow {
         args = ["start", ...targetObjects];
         if (duration) args.push("--duration", String(duration));
         if (videoPath) args.push("--video_out", videoPath);
+        const segmentation = Boolean((visualMode as any).detectionSegmentation);
+        const segModel = (visualMode as any).detectionSegModel;
+        if (segmentation) args.push("--segmentation");
+        if (segmentation && typeof segModel === "string" && segModel.trim()) {
+          args.push("--seg_model", segModel.trim());
+        }
       }
       
       console.log(`[ChatFlow] Final args:`, args);

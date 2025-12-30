@@ -176,8 +176,38 @@ export const transformToGeminiType = (parameters: Object) => {
 };
 
 export const purifyTextForTTS = (text: string): string => {
-  // Remove emojis and special characters
   return text
-    .replace(/[*#~]|[\p{Emoji_Presentation}\u200d\ufe0f]/gu, "")
+    // Remove markdown headers (## Header)
+    .replace(/^#{1,6}\s+/gm, "")
+    // Convert markdown links [text](url) to just text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Remove standalone URLs or strip protocol/www
+    .replace(/https?:\/\/(www\.)?/gi, "")
+    .replace(/www\./gi, "")
+    // Remove bold/italic markers (**, *, __, _)
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    // Remove remaining asterisks and underscores used for emphasis
+    .replace(/[*_]/g, "")
+    // Remove markdown code blocks ```code```
+    .replace(/```[\s\S]*?```/g, "")
+    // Remove inline code `code`
+    .replace(/`([^`]+)`/g, "$1")
+    // Remove markdown bullet points (- item, * item)
+    .replace(/^[\s]*[-*+]\s+/gm, "")
+    // Remove numbered list markers (1. item)
+    .replace(/^[\s]*\d+\.\s+/gm, "")
+    // Remove blockquotes (> text)
+    .replace(/^>\s+/gm, "")
+    // Remove horizontal rules (---, ***)
+    .replace(/^[-*_]{3,}$/gm, "")
+    // Remove hash symbols
+    .replace(/#/g, "")
+    // Remove emojis
+    .replace(/[\p{Emoji_Presentation}\u200d\ufe0f]/gu, "")
+    // Clean up multiple spaces
+    .replace(/\s{2,}/g, " ")
+    // Clean up multiple newlines
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 };

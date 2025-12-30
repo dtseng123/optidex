@@ -42,12 +42,13 @@ class RenderThread(threading.Thread):
         self.whisplay = whisplay
         self.font_path = font_path
         self.fps = fps
-        self.render_init_screen()
         self.running = True
         self.main_text_font = ImageFont.truetype(self.font_path, 20)
         self.main_text_line_height = self.main_text_font.getmetrics()[0] + self.main_text_font.getmetrics()[1]
         self.text_cache_image = None
         self.current_render_text = ""
+        # Render init screen (video/logo) before starting render loop
+        self.render_init_screen()
 
     def render_init_screen(self):
         # Display video or logo on startup
@@ -104,21 +105,47 @@ class RenderThread(threading.Thread):
                     time.sleep(max(frame_delay, 0.03))  # Cap at ~30fps
                 
                 cap.release()
+                print("[Init] Video frames finished, cleaning up...")
                 
-                # Wait for audio to finish if still playing
+                # Wait for audio to finish if still playing (with timeout)
                 if audio_process:
-                    audio_process.wait()
+                    try:
+                        audio_process.wait(timeout=5)  # Don't wait forever
+                    except subprocess.TimeoutExpired:
+                        print("[Init] Audio process timeout, killing...")
+                        audio_process.kill()
+                    except Exception as e:
+                        print(f"[Init] Audio cleanup error: {e}")
+                
+                # Clear the display after video to prevent frozen last frame
+                # Draw a black screen to clear any remaining video frame
+                print("[Init] Clearing display after video...")
+                black_image = Image.new("RGBA", (self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT), (0, 0, 0, 255))
+                rgb565_data = ImageUtils.image_to_rgb565(black_image, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT)
+                self.whisplay.draw_image(0, 0, self.whisplay.LCD_WIDTH, self.whisplay.LCD_HEIGHT, rgb565_data)
+                
+                # Ensure current_image_path is cleared so render loop takes over properly
+                global current_image_path, current_status, current_emoji, current_text, current_scroll_top, current_battery_level, current_battery_color
+                current_image_path = ""
+                
+                # Render initial state immediately to ensure display updates after video
+                # This prevents the frozen last frame issue
+                print("[Init] Rendering initial display state...")
+                self.render_frame(current_status, current_emoji, current_text, current_scroll_top, current_battery_level, current_battery_color)
+                
+                # Small delay to ensure display is updated before render loop takes over
+                time.sleep(0.1)
                 
                 # Play GLaDOS welcome audio after video
-                glados_audio = "/home/dash/optidex/glados_test.wav"
-                if os.path.exists(glados_audio):
-                    try:
-                        print("[Init] Playing GLaDOS welcome audio...")
-                        subprocess.Popen(["aplay", "-q", glados_audio], 
-                                       stdout=subprocess.DEVNULL, 
-                                       stderr=subprocess.DEVNULL)
-                    except Exception as audio_err:
-                        print(f"[Init] Error playing audio: {audio_err}")
+                # glados_audio = "/home/dash/optidex/glados_test.wav"
+                # if os.path.exists(glados_audio):
+                #     try:
+                #         print("[Init] Playing GLaDOS welcome audio...")
+                #         subprocess.Popen(["aplay", "-q", glados_audio], 
+                #                        stdout=subprocess.DEVNULL, 
+                #                        stderr=subprocess.DEVNULL)
+                #     except Exception as audio_err:
+                #         print(f"[Init] Error playing audio: {audio_err}")
                         
             except Exception as e:
                 print(f"[Init] Error playing MP4: {e}")
@@ -413,7 +440,8 @@ def handle_client(client_socket, addr, whisplay):
 
                     if rgbled:
                         rgb255_tuple = ColorUtils.get_rgb255_from_any(rgbled)
-                        whisplay.set_rgb_fade(*rgb255_tuple, duration_ms=500)
+                        if whisplay is not None and hasattr(whisplay, "set_rgb_fade"):
+                            whisplay.set_rgb_fade(*rgb255_tuple, duration_ms=500)
                     
                     if battery_color:
                         battery_tuple = ColorUtils.get_rgb255_from_any(battery_color)
@@ -421,7 +449,8 @@ def handle_client(client_socket, addr, whisplay):
                         battery_tuple = (0, 0, 0)
                         
                     if brightness:
-                        whisplay.set_backlight(brightness)
+                        if whisplay is not None and hasattr(whisplay, "set_backlight"):
+                            whisplay.set_backlight(brightness)
                         
                     if (text is not None) or (status is not None) or (emoji is not None) or \
                        (battery_level is not None) or (battery_color is not None) or \
@@ -450,13 +479,19 @@ def handle_client(client_socket, addr, whisplay):
         print(f"[Socket - {addr}] Connection error: {e}")
     finally:
         print(f"[Socket] Client {addr} disconnected")
-        del clients[addr]
+        if addr in clients:
+            del clients[addr]
         client_socket.close()
 
-def start_socket_server(render_thread, host='0.0.0.0', port=12345):
-    # Register button events
-    whisplay.on_button_press(on_button_pressed)
-    whisplay.on_button_release(on_button_release)
+def start_socket_server(render_thread_holder, whisplay, host='0.0.0.0', port=12345):
+    # Register button events (if hardware is available)
+    try:
+        if whisplay is not None and hasattr(whisplay, "on_button_press"):
+            whisplay.on_button_press(on_button_pressed)
+        if whisplay is not None and hasattr(whisplay, "on_button_release"):
+            whisplay.on_button_release(on_button_release)
+    except Exception as e:
+        print(f"[Socket] Warning: could not register button callbacks: {e}")
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -474,17 +509,105 @@ def start_socket_server(render_thread, host='0.0.0.0', port=12345):
     except KeyboardInterrupt:
         print("[Socket] Server stopped")
     finally:
-        render_thread.stop()
+        # render_thread_holder is a dict with "thread" key
+        render_thread = render_thread_holder.get("thread") if isinstance(render_thread_holder, dict) else render_thread_holder
+        if render_thread and hasattr(render_thread, 'stop'):
+            render_thread.stop()
         server_socket.close()
 
 
 if __name__ == "__main__":
-    whisplay = WhisplayBoard()
-    print(f"[LCD] Initialization finished: {whisplay.LCD_WIDTH}x{whisplay.LCD_HEIGHT}")
-    # start render thread - increased FPS for smoother video playback
-    render_thread = RenderThread(whisplay, "NotoSansSC-Bold.ttf", fps=40)
-    render_thread.start()
-    start_socket_server(render_thread, host='0.0.0.0', port=12345)
+    # Clean up stale video frame files from previous sessions on startup
+    print("[Init] Cleaning up stale video frame files...")
+    stale_frames = [
+        "/tmp/whisplay_current_video_frame.jpg",
+        "/tmp/whisplay_video_preview_latest.jpg",
+        "/tmp/whisplay_detection_frame.jpg",
+        "/tmp/whisplay_pose_frame.jpg",
+        "/tmp/whisplay_observer_frame.jpg",
+        "/tmp/whisplay_sentry_frame.jpg",
+        "/tmp/whisplay_video_playback.json",
+        "/tmp/whisplay_video_state.json"
+    ]
+    for frame_file in stale_frames:
+        if os.path.exists(frame_file):
+            try:
+                os.remove(frame_file)
+                print(f"[Init] Removed stale frame: {frame_file}")
+            except Exception as e:
+                print(f"[Init] Warning: Could not remove {frame_file}: {e}")
+    
+    # Clean up video frames directory if it exists
+    frame_dir = "/tmp/whisplay_video_frames"
+    if os.path.exists(frame_dir):
+        try:
+            import shutil
+            shutil.rmtree(frame_dir)
+            print(f"[Init] Removed stale video frames directory: {frame_dir}")
+        except Exception as e:
+            print(f"[Init] Warning: Could not remove {frame_dir}: {e}")
+    
+    headless = False
+    try:
+        whisplay = WhisplayBoard()
+        print(f"[LCD] Initialization finished: {whisplay.LCD_WIDTH}x{whisplay.LCD_HEIGHT}")
+    except Exception as e:
+        headless = True
+        print(f"[LCD] WhisplayBoard init failed, running headless UI (no GPIO/LCD): {e}")
+
+        class DummyWhisplay:
+            LCD_WIDTH = 240
+            LCD_HEIGHT = 280
+            CornerHeight = 20
+
+            def on_button_press(self, callback):  # noqa: ANN001
+                return
+
+            def on_button_release(self, callback):  # noqa: ANN001
+                return
+
+            def set_rgb_fade(self, *args, **kwargs):  # noqa: ANN001
+                return
+
+            def set_backlight(self, *args, **kwargs):  # noqa: ANN001
+                return
+
+            def cleanup(self):
+                return
+
+        whisplay = DummyWhisplay()
+
+    # Create a placeholder for render_thread that socket server can reference
+    render_thread_holder = {"thread": None}
+    
+    # Start socket server FIRST in a separate thread so it's ready immediately
+    # This allows Node.js to connect even while the startup video is playing
+    # The socket server uses render_thread_holder which will be populated after video
+    def socket_server_wrapper():
+        start_socket_server(render_thread_holder, whisplay, '0.0.0.0', 12345)
+    
+    socket_thread = threading.Thread(target=socket_server_wrapper, daemon=True)
+    socket_thread.start()
+    print("[Init] Socket server thread started, waiting for connections...")
+    
+    # Give socket server a moment to start listening
+    time.sleep(0.5)
+
+    # Now start render thread - this will play the startup video (blocking in __init__)
+    if not headless:
+        render_thread = RenderThread(whisplay, "NotoSansSC-Bold.ttf", fps=40)
+        render_thread_holder["thread"] = render_thread
+        render_thread.start()
+    else:
+        class NoopRenderThread:
+            def start(self):
+                return
+
+            def stop(self):
+                return
+
+        render_thread = NoopRenderThread()
+        render_thread_holder["thread"] = render_thread
     
     def cleanup_and_exit(signum, frame):
         print("[System] Exiting...")

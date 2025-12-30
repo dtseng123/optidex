@@ -71,7 +71,14 @@ export class WhisplayDisplay {
   constructor() {
     // Ensure default emoji includes the current mode icon
     this.currentStatus.emoji = withModeEmoji(this.currentStatus.emoji) as string;
-    this.startPythonProcess();
+    // In most deployments, the launcher script (`run_chatbot.sh`) is responsible for
+    // starting the Python UI. Spawning it again here causes repeated crashes/retries
+    // and can leak event listeners.
+    if (process.env.OPTIDEX_SPAWN_PY_UI !== "0") {
+      this.startPythonProcess();
+    } else {
+      console.log("Skipping Python UI spawn (OPTIDEX_SPAWN_PY_UI=0)");
+    }
     this.isReady = new Promise<void>((resolve) => {
       this.connectWithRetry(15, resolve);
     });
@@ -141,7 +148,8 @@ export class WhisplayDisplay {
         this.client.destroy();
       }
       this.client = new Socket();
-      this.client.connect(12345, "0.0.0.0", () => {
+      // Use loopback for the client connection; 0.0.0.0 is only valid for bind().
+      this.client.connect(12345, "127.0.0.1", () => {
         console.log("Connected to local display socket");
         this.sendToDisplay(JSON.stringify(this.currentStatus));
         resolve();
@@ -171,6 +179,11 @@ export class WhisplayDisplay {
         console.error("Display Socket error:", err);
         // 如果是ECONNREFUSED
         if (err.code === "ECONNREFUSED") {
+          try {
+            this.client?.destroy();
+          } catch {
+            // ignore
+          }
           reject(err);
         }
       });

@@ -36,6 +36,10 @@ cleanup() {
   rm -f "$PIDFILE"
   echo "Cleaning up after service..."
   
+  # Stop periodic observer
+  pkill -f "periodic_observer.py" 2>/dev/null || true
+  rm -f /tmp/periodic_observer_state.json
+  
   if [ "$serve_ollama" = true ]; then
     echo "Stopping Ollama server..."
     pkill ollama || true
@@ -110,7 +114,14 @@ if [ "$serve_ollama" = true ]; then
   ollama serve &
 fi
 
-# Start Python UI first in background
+# Start periodic observer (captures video+audio every 10 min, doesn't block mic)
+echo "Starting periodic observer (10 min intervals)..."
+cd /home/dash/optidex/python
+python3 periodic_observer.py --interval 10 --duration 4 > /tmp/periodic_observer.log 2>&1 &
+OBSERVER_PID=$!
+echo "Periodic observer started (PID: $OBSERVER_PID)"
+
+# Start Python UI in background
 echo "Starting Python UI..."
 cd /home/dash/optidex/python && sudo python3 chatbot-ui.py &
 PYTHON_PID=$!

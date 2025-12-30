@@ -1,0 +1,236 @@
+#!/bin/bash
+#
+# Jarvis CLI - Command-line interface for Jarvis memory and observation systems
+#
+# Usage:
+#   jarvis memory stats         - Show memory statistics
+#   jarvis memory recent        - Show recent episodes
+#   jarvis observer start       - Start periodic observer
+#   jarvis observer stop        - Stop periodic observer
+#   jarvis knowledge search <q> - Search knowledge base
+#   jarvis pause                - Pause all memory creation
+#   jarvis resume               - Resume memory creation
+#
+
+set -e
+
+# Resolve actual script directory (handles symlinks)
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Python scripts
+MEMORY_SCRIPT="$SCRIPT_DIR/python/memory.py"
+OBSERVER_SCRIPT="$SCRIPT_DIR/python/periodic_observer.py"
+KNOWLEDGE_SCRIPT="$SCRIPT_DIR/python/knowledge_base.py"
+DISPLAY_SCRIPT="$SCRIPT_DIR/python/memory_display.py"
+
+print_header() {
+    echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC}         ${GREEN}JARVIS CONTROL SYSTEM${NC}         ${BLUE}║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
+    echo ""
+}
+
+print_help() {
+    print_header
+    echo "Usage: jarvis <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  memory stats          Show memory statistics"
+    echo "  memory recent [n]     Show n recent episodes (default: 5)"
+    echo "  memory missions       Show active missions"
+    echo "  memory context        Get LLM context summary"
+    echo "  memory display        Generate and show memory visualization"
+    echo ""
+    echo "  observer start        Start periodic observer"
+    echo "  observer stop         Stop periodic observer  "
+    echo "  observer once         Run single observation"
+    echo "  observer status       Check observer status"
+    echo ""
+    echo "  knowledge search <q>  Search knowledge base"
+    echo "  knowledge article <t> Get article by title"
+    echo "  knowledge stats       Show knowledge base stats"
+    echo "  knowledge download    Download Wikipedia (warning: large!)"
+    echo ""
+    echo "  pause                 Pause all memory creation systems"
+    echo "  resume                Resume all memory creation systems"
+    echo "  status                Show system status"
+    echo ""
+}
+
+case "${1:-help}" in
+    memory)
+        case "${2:-stats}" in
+            stats)
+                print_header
+                echo -e "${YELLOW}Memory Statistics:${NC}"
+                python3 "$MEMORY_SCRIPT" stats
+                ;;
+            recent)
+                LIMIT="${3:-5}"
+                print_header
+                echo -e "${YELLOW}Recent Episodes (last $LIMIT):${NC}"
+                python3 "$MEMORY_SCRIPT" recent --limit "$LIMIT"
+                ;;
+            missions)
+                print_header
+                echo -e "${YELLOW}Active Missions:${NC}"
+                python3 "$MEMORY_SCRIPT" missions
+                ;;
+            context)
+                python3 "$MEMORY_SCRIPT" context
+                ;;
+            display)
+                print_header
+                echo -e "${YELLOW}Generating memory visualization...${NC}"
+                python3 "$DISPLAY_SCRIPT" --detail graph --display
+                ;;
+            *)
+                echo "Unknown memory command: ${2}"
+                echo "Options: stats, recent, missions, context, display"
+                ;;
+        esac
+        ;;
+    
+    observer)
+        case "${2:-status}" in
+            start)
+                print_header
+                echo -e "${GREEN}Starting Periodic Observer...${NC}"
+                INTERVAL="${3:-10}"
+                nohup python3 "$OBSERVER_SCRIPT" --interval "$INTERVAL" > /tmp/periodic_observer.log 2>&1 &
+                echo "Observer started (interval: ${INTERVAL} minutes)"
+                echo "Log: /tmp/periodic_observer.log"
+                ;;
+            stop)
+                print_header
+                echo -e "${YELLOW}Stopping Periodic Observer...${NC}"
+                pkill -f "periodic_observer.py" 2>/dev/null && echo "Observer stopped" || echo "Observer not running"
+                ;;
+            once)
+                print_header
+                echo -e "${GREEN}Running single observation...${NC}"
+                python3 "$OBSERVER_SCRIPT" --once
+                ;;
+            status)
+                print_header
+                if pgrep -f "periodic_observer.py" > /dev/null; then
+                    echo -e "${GREEN}Observer: RUNNING${NC}"
+                    PID=$(pgrep -f "periodic_observer.py")
+                    echo "PID: $PID"
+                else
+                    echo -e "${YELLOW}Observer: STOPPED${NC}"
+                fi
+                ;;
+            *)
+                echo "Unknown observer command: ${2}"
+                echo "Options: start, stop, once, status"
+                ;;
+        esac
+        ;;
+    
+    knowledge)
+        case "${2:-stats}" in
+            search)
+                if [ -z "${3:-}" ]; then
+                    echo "Usage: jarvis knowledge search <query>"
+                    exit 1
+                fi
+                python3 "$KNOWLEDGE_SCRIPT" search "${@:3}"
+                ;;
+            article)
+                if [ -z "${3:-}" ]; then
+                    echo "Usage: jarvis knowledge article <title>"
+                    exit 1
+                fi
+                python3 "$KNOWLEDGE_SCRIPT" article "${3}"
+                ;;
+            entity)
+                if [ -z "${3:-}" ]; then
+                    echo "Usage: jarvis knowledge entity <id>"
+                    exit 1
+                fi
+                python3 "$KNOWLEDGE_SCRIPT" entity "${3}"
+                ;;
+            stats)
+                print_header
+                echo -e "${YELLOW}Knowledge Base Statistics:${NC}"
+                python3 "$KNOWLEDGE_SCRIPT" stats
+                ;;
+            download)
+                print_header
+                echo -e "${RED}WARNING: This will download ~22GB of data!${NC}"
+                echo -e "Continue? (y/N) "
+                read -r answer
+                if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+                    python3 "$KNOWLEDGE_SCRIPT" download
+                else
+                    echo "Cancelled."
+                fi
+                ;;
+            *)
+                echo "Unknown knowledge command: ${2}"
+                echo "Options: search, article, entity, stats, download"
+                ;;
+        esac
+        ;;
+    
+    pause)
+        print_header
+        echo -e "${YELLOW}Pausing all memory creation systems...${NC}"
+        pkill -f "periodic_observer.py" 2>/dev/null && echo "Periodic Observer stopped" || echo "Observer not running"
+        echo -e "${GREEN}Memory creation paused.${NC}"
+        ;;
+    
+    resume)
+        print_header
+        echo -e "${GREEN}Resuming memory creation systems...${NC}"
+        if ! pgrep -f "periodic_observer.py" > /dev/null; then
+            nohup python3 "$OBSERVER_SCRIPT" --interval 10 > /tmp/periodic_observer.log 2>&1 &
+            echo "Periodic Observer started"
+        else
+            echo "Observer already running"
+        fi
+        echo -e "${GREEN}Memory creation resumed.${NC}"
+        ;;
+    
+    status)
+        print_header
+        echo -e "${YELLOW}System Status:${NC}"
+        echo ""
+        
+        # Observer status
+        if pgrep -f "periodic_observer.py" > /dev/null; then
+            echo -e "Periodic Observer: ${GREEN}RUNNING${NC}"
+        else
+            echo -e "Periodic Observer: ${YELLOW}STOPPED${NC}"
+        fi
+        
+        # Memory stats
+        echo ""
+        echo "Memory:"
+        python3 "$MEMORY_SCRIPT" stats 2>/dev/null || echo "  (memory system unavailable)"
+        
+        # Knowledge base
+        echo ""
+        echo "Knowledge Base:"
+        python3 "$KNOWLEDGE_SCRIPT" stats 2>/dev/null || echo "  (not initialized)"
+        ;;
+    
+    help|--help|-h)
+        print_help
+        ;;
+    
+    *)
+        echo "Unknown command: ${1}"
+        print_help
+        exit 1
+        ;;
+esac
+

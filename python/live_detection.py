@@ -3,6 +3,9 @@
 Live object detection with Coral EdgeTPU + YOLO-World fallback
 - EdgeTPU: Fast (~21ms/47FPS) for COCO classes (person, car, bottle, etc.)
 - YOLO-World: Open vocabulary for custom objects (my red backpack, etc.)
+Optional:
+- YOLO Segmentation: Mask overlay for COCO objects (requires a *seg* model like yolov8n-seg.pt)
+- Kalman filtering: Temporal smoothing for detection boxes and segmentation masks
 """
 import sys
 import os
@@ -10,8 +13,19 @@ import time
 import json
 import cv2
 import numpy as np
+import base64
+from io import BytesIO
 from picamera2 import Picamera2
 from PIL import Image, ImageDraw, ImageFont
+
+# Import Kalman tracker for temporal smoothing
+try:
+    from kalman_tracker import MultiObjectTracker, MaskSmoother, create_tracker, create_mask_smoother
+    KALMAN_AVAILABLE = True
+    print("[Kalman] Tracker available - temporal smoothing enabled", file=sys.stderr)
+except ImportError:
+    KALMAN_AVAILABLE = False
+    print("[Kalman] Tracker not available - no temporal smoothing", file=sys.stderr)
 
 # State file for detection control
 STATE_FILE = "/tmp/whisplay_detection_state.json"
@@ -136,38 +150,182 @@ def draw_detections(image, detections, target_objects):
     return image
 
 
-def run_live_detection(target_objects, confidence_threshold=0.3, duration=None, video_out=None, force_yolo=False):
+def overlay_segmentation(image_rgb, detections, alpha=0.35):
+    """
+    Overlay segmentation polygons on a PIL RGB image.
+    Each detection may include 'mask_xy': list of [x,y] points (in image coords).
+    """
+    if image_rgb.mode != "RGB":
+        image_rgb = image_rgb.convert("RGB")
+
+    overlay = Image.new("RGBA", image_rgb.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Deterministic palette
+    palette = [
+        (0, 255, 0),
+        (255, 0, 0),
+        (0, 128, 255),
+        (255, 128, 0),
+        (255, 0, 255),
+        (0, 255, 255),
+        (128, 255, 0),
+        (255, 255, 0),
+    ]
+
+    for idx, det in enumerate(detections):
+        poly = det.get("mask_xy")
+        if not poly:
+            continue
+        color = palette[idx % len(palette)]
+        fill = (color[0], color[1], color[2], int(255 * alpha))
+        outline = (color[0], color[1], color[2], 255)
+        try:
+            # PIL expects sequence of tuples
+            pts = [(int(p[0]), int(p[1])) for p in poly]
+            if len(pts) >= 3:
+                draw.polygon(pts, fill=fill, outline=outline)
+        except Exception:
+            continue
+
+    return Image.alpha_composite(image_rgb.convert("RGBA"), overlay).convert("RGB")
+
+
+def overlay_semantic_mask(image_rgb, mask_png_b64, person_class_id=None, alpha=0.35, color=(0, 255, 0)):
+    """
+    Overlay semantic segmentation mask (class-id per pixel) onto a PIL RGB image.
+    If person_class_id is provided, only that class is overlaid; otherwise any nonzero class is overlaid.
+    """
+    if not mask_png_b64:
+        return image_rgb
+
+    if image_rgb.mode != "RGB":
+        image_rgb = image_rgb.convert("RGB")
+
+    try:
+        mask_bytes = base64.b64decode(mask_png_b64)
+        mask_img = Image.open(BytesIO(mask_bytes)).convert("L")
+    except Exception:
+        return image_rgb
+
+    # Resize to match image (nearest to preserve class IDs)
+    mask_img = mask_img.resize(image_rgb.size, Image.NEAREST)
+    mask = np.array(mask_img, dtype=np.uint8)
+
+    if person_class_id is not None:
+        sel = mask == int(person_class_id)
+    else:
+        sel = mask != 0
+
+    if not np.any(sel):
+        return image_rgb
+
+    overlay = Image.new("RGBA", image_rgb.size, (0, 0, 0, 0))
+    ov = np.array(overlay, dtype=np.uint8)
+    ov[sel, 0] = color[0]
+    ov[sel, 1] = color[1]
+    ov[sel, 2] = color[2]
+    ov[sel, 3] = int(255 * alpha)
+    overlay = Image.fromarray(ov, mode="RGBA")
+
+    return Image.alpha_composite(image_rgb.convert("RGBA"), overlay).convert("RGB")
+
+
+def run_live_detection(
+    target_objects,
+    confidence_threshold=0.3,
+    duration=None,
+    video_out=None,
+    force_yolo=False,
+    segmentation=False,
+    seg_model=None,
+    smoothing="medium",
+):
     """
     Run live object detection.
     
     Automatically chooses backend:
     - EdgeTPU (fast) for standard COCO objects
     - YOLO-World (flexible) for custom/open-vocabulary objects
+    If segmentation=True:
+    - Only supported for COCO objects, using a segmentation-capable YOLO model (e.g. yolov8n-seg.pt)
+    
+    Args:
+        smoothing: "none", "low", "medium", "high" - Kalman filter smoothing level
     """
     try:
+        # Two segmentation modes:
+        # 1) YOLO instance segmentation (COCO-only, requires a YOLO *seg* model .pt)
+        # 2) EdgeTPU semantic segmentation (requires Coral EdgeTPU segmentation model + segmentation server)
+        target_lower = [o.lower().strip() for o in target_objects]
+        all_coco = all(o in COCO_CLASSES for o in target_lower)
+        want_person = "person" in target_lower
+
+        # Prefer EdgeTPU semantic segmentation when available and user wants "person".
+        use_edgetpu_semseg = False
+        if segmentation and want_person and EDGETPU_AVAILABLE and edgetpu_client is not None:
+            use_edgetpu_semseg = hasattr(edgetpu_client, "segment")
+
+        # YOLO seg only supports COCO objects. If request isn't COCO, disable YOLO seg (but keep EdgeTPU semseg if enabled).
+        use_yolo_seg = bool(segmentation and (not use_edgetpu_semseg))
+        if use_yolo_seg and not all_coco:
+            print("[Segmentation] Non-COCO objects requested; YOLO segmentation disabled (bbox only).", file=sys.stderr)
+            use_yolo_seg = False
+
         # Decide which backend to use
-        use_edgetpu = can_use_edgetpu(target_objects) and not force_yolo
-        backend = "edgetpu" if use_edgetpu else "yolo-world"
+        # If using YOLO segmentation, we must use YOLO; EdgeTPU detection is still ok with EdgeTPU semantic seg.
+        use_edgetpu = (not force_yolo) and can_use_edgetpu(target_objects) and (not use_yolo_seg)
+        backend = (
+            "edgetpu+semseg" if (use_edgetpu and use_edgetpu_semseg) else
+            "edgetpu" if use_edgetpu else
+            "yolo-seg" if use_yolo_seg else
+            "yolo-world"
+        )
         
         print(f"=" * 50)
         print(f"Backend: {backend.upper()}")
         print(f"Objects: {', '.join(target_objects)}")
         print(f"=" * 50)
         
-        # Initialize YOLO-World if needed
+        # Initialize YOLO model if needed
         model = None
-        if not use_edgetpu:
+        if (not use_edgetpu) or use_yolo_seg:
             try:
                 from ultralytics import YOLO
             except ImportError:
                 print("Error: ultralytics not installed", file=sys.stderr)
                 return False
             
-            print(f"Loading YOLO-World model for open-vocabulary detection...")
-            yolo_model = os.environ.get('YOLO_MODEL', 'yolov8s-world.pt')
-            model = YOLO(yolo_model)
-            model.set_classes(target_objects)
-            print(f"YOLO-World ready!")
+            if use_yolo_seg:
+                yolo_seg_model = (
+                    seg_model
+                    or os.environ.get("YOLO_SEG_MODEL")
+                    or os.environ.get("YOLO_MODEL_SEG")
+                    or "yolov8n-seg.pt"
+                )
+                if not os.path.exists(yolo_seg_model):
+                    # Also check common repo root location
+                    repo_candidate = os.path.join(os.path.dirname(__file__), "..", yolo_seg_model)
+                    repo_candidate = os.path.abspath(repo_candidate)
+                    if os.path.exists(repo_candidate):
+                        yolo_seg_model = repo_candidate
+                    else:
+                        print(
+                            f"[Segmentation] Seg model not found: {yolo_seg_model}. "
+                            f"Download a segmentation model (e.g. yolov8n-seg.pt) into /home/dash/optidex/ "
+                            f"or set YOLO_SEG_MODEL to the path.",
+                            file=sys.stderr,
+                        )
+                        return False
+                print(f"Loading YOLO segmentation model: {yolo_seg_model} ...")
+                model = YOLO(yolo_seg_model)
+                print("YOLO segmentation ready!")
+            else:
+                print(f"Loading YOLO-World model for open-vocabulary detection...")
+                yolo_model = os.environ.get('YOLO_MODEL', 'yolov8s-world.pt')
+                model = YOLO(yolo_model)
+                model.set_classes(target_objects)
+                print(f"YOLO-World ready!")
         
         # Initialize camera
         print(f"Starting camera...")
@@ -205,6 +363,20 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None, 
         start_time = time.time()
         frame_count = 0
         fps_start = time.time()
+
+        # EdgeTPU semantic segmentation cache (base64 PNG mask)
+        last_mask_b64 = None
+        last_mask_person_id = None
+        semseg_every_n = int(os.environ.get("SEMSEG_EVERY_N", "3") or "3")
+        semseg_every_n = max(1, semseg_every_n)
+        
+        # Kalman tracker for temporal smoothing
+        box_tracker = None
+        mask_smoother = None
+        if KALMAN_AVAILABLE and smoothing != "none":
+            box_tracker = create_tracker(smoothing)
+            mask_smoother = create_mask_smoother(smoothing)
+            print(f"[Kalman] Enabled with smoothing={smoothing}", file=sys.stderr)
         
         while True:
             state = load_state()
@@ -259,36 +431,121 @@ def run_live_detection(target_objects, confidence_threshold=0.3, duration=None, 
                     print(f"[EdgeTPU] Error: {e}", file=sys.stderr)
                     import traceback
                     traceback.print_exc()
+
+                # Optional EdgeTPU semantic segmentation overlay (person mask)
+                if use_edgetpu_semseg and (frame_count % semseg_every_n == 0):
+                    try:
+                        seg = edgetpu_client.segment(image, out_w=320, out_h=240)
+                        if seg.get("success") and seg.get("mask_png_base64"):
+                            last_mask_b64 = seg.get("mask_png_base64")
+                            last_mask_person_id = seg.get("person_class_id")
+                    except Exception as e:
+                        # If segmentation server isn't running, disable semseg to avoid spamming/logging
+                        print(f"[EdgeTPU][Seg] Error: {e} (disabling semseg)", file=sys.stderr)
+                        use_edgetpu_semseg = False
             
             else:
-                # --- YOLO-World Path ---
-                results = model(image, conf=confidence_threshold, verbose=False)
-                target_objects_lower = [obj.lower() for obj in target_objects]
-                
-                for result in results:
-                    boxes = result.boxes
-                    for box in boxes:
-                        x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        conf = float(box.conf[0])
-                        cls_id = int(box.cls[0])
-                        cls_name = result.names[cls_id]
-                        
-                        is_target = cls_name.lower() in target_objects_lower
-                        if is_target or len(target_objects) == 0:
-                            detections.append({
+                if use_yolo_seg:
+                    # --- YOLO Segmentation Path (COCO objects only) ---
+                    results = model(image, conf=confidence_threshold, verbose=False)
+                    target_objects_lower = [obj.lower() for obj in target_objects]
+
+                    for result in results:
+                        boxes = result.boxes
+                        masks = getattr(result, "masks", None)
+                        # Prefer polygons in image coordinates
+                        polys = masks.xy if masks is not None else None
+
+                        for i_box, box in enumerate(boxes):
+                            x1, y1, x2, y2 = box.xyxy[0].tolist()
+                            conf = float(box.conf[0])
+                            cls_id = int(box.cls[0])
+                            cls_name = result.names[cls_id]
+                            is_target = cls_name.lower() in target_objects_lower
+                            if not (is_target or len(target_objects) == 0):
+                                continue
+
+                            det = {
                                 'bbox': [int(x1), int(y1), int(x2), int(y2)],
                                 'confidence': conf,
                                 'class_name': cls_name,
                                 'is_target': is_target
-                            })
+                            }
+                            if polys is not None and i_box < len(polys):
+                                # polys[i_box] is Nx2 float array
+                                det["mask_xy"] = polys[i_box].tolist()
+                            detections.append(det)
+                else:
+                    # --- YOLO-World Path ---
+                    results = model(image, conf=confidence_threshold, verbose=False)
+                    target_objects_lower = [obj.lower() for obj in target_objects]
+                    
+                    for result in results:
+                        boxes = result.boxes
+                        for box in boxes:
+                            x1, y1, x2, y2 = box.xyxy[0].tolist()
+                            conf = float(box.conf[0])
+                            cls_id = int(box.cls[0])
+                            cls_name = result.names[cls_id]
+                            
+                            is_target = cls_name.lower() in target_objects_lower
+                            if is_target or len(target_objects) == 0:
+                                detections.append({
+                                    'bbox': [int(x1), int(y1), int(x2), int(y2)],
+                                    'confidence': conf,
+                                    'class_name': cls_name,
+                                    'is_target': is_target
+                                })
+            
+            # Apply Kalman smoothing to detection boxes
+            if box_tracker is not None and detections:
+                tracked = box_tracker.update(detections)
+                # Convert TrackedBox back to detection dict format
+                smoothed_detections = []
+                for t in tracked:
+                    # Find original detection for mask_xy if present
+                    orig_det = next((d for d in detections if d['class_name'] == t.class_name), None)
+                    smoothed_det = {
+                        'bbox': t.bbox,
+                        'confidence': t.confidence,
+                        'class_name': t.class_name,
+                        'is_target': True,
+                        'track_id': t.track_id,
+                    }
+                    # Preserve mask_xy for YOLO segmentation
+                    if orig_det and 'mask_xy' in orig_det:
+                        smoothed_det['mask_xy'] = orig_det['mask_xy']
+                    smoothed_detections.append(smoothed_det)
+                detections = smoothed_detections
             
             # Draw detections
             if detections:
+                if use_edgetpu_semseg and last_mask_b64:
+                    # Apply temporal smoothing to segmentation mask
+                    if mask_smoother is not None:
+                        try:
+                            mask_bytes = base64.b64decode(last_mask_b64)
+                            mask_img = Image.open(BytesIO(mask_bytes)).convert("L")
+                            mask_arr = np.array(mask_img, dtype=np.uint8)
+                            smoothed_mask = mask_smoother.update(mask_arr, class_id=last_mask_person_id)
+                            # Convert back to base64 for overlay function
+                            smoothed_pil = Image.fromarray(smoothed_mask, mode="L")
+                            buf = BytesIO()
+                            smoothed_pil.save(buf, format="PNG")
+                            smoothed_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+                            image = overlay_semantic_mask(image, smoothed_b64, person_class_id=255, alpha=0.30, color=(0, 255, 0))
+                        except Exception:
+                            image = overlay_semantic_mask(image, last_mask_b64, person_class_id=last_mask_person_id, alpha=0.30, color=(0, 255, 0))
+                    else:
+                        image = overlay_semantic_mask(image, last_mask_b64, person_class_id=last_mask_person_id, alpha=0.30, color=(0, 255, 0))
+                if use_yolo_seg:
+                    image = overlay_segmentation(image, detections, alpha=0.35)
                 image = draw_detections(image, detections, target_objects)
                 if frame_count % 10 == 0 or frame_count <= 3:
                     print(f"[Detection] Frame {frame_count}: Found {len(detections)} objects", flush=True)
                     for det in detections[:3]:
-                        print(f"  - {det['class_name']}: {det['confidence']:.2f}", flush=True)
+                        tid = det.get('track_id', '?')
+                        print(f"  - {det['class_name']}: {det['confidence']:.2f} (track {tid})", flush=True)
             else:
                 if frame_count % 30 == 0 or frame_count <= 3:
                     print(f"[Detection] Frame {frame_count}: No objects detected", flush=True)
@@ -348,17 +605,26 @@ def stop_detection():
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: live_detection.py <start|stop> [objects...] [--confidence 0.3] [--duration 30] [--video_out path.mp4] [--force-yolo]")
+        print("Usage: live_detection.py <start|stop> [objects...] [--confidence 0.3] [--duration 30] [--video_out path.mp4] [--force-yolo] [--segmentation] [--seg_model yolov8n-seg.pt] [--smoothing medium]")
         print("")
         print("Backends:")
         print("  EdgeTPU (~47 FPS) - Used automatically for COCO classes:")
         print(f"    {', '.join(sorted(list(COCO_CLASSES)[:20]))}...")
         print("  YOLO-World (~15 FPS) - Used for custom objects or with --force-yolo")
+        print("  YOLO-Seg (slower) - Mask overlay for COCO classes only (requires a seg model)")
+        print("")
+        print("Smoothing (Kalman filter):")
+        print("  --smoothing none    # No smoothing (raw detections)")
+        print("  --smoothing low     # Responsive, minimal smoothing")
+        print("  --smoothing medium  # Balanced (default)")
+        print("  --smoothing high    # Very smooth, slight lag")
         print("")
         print("Examples:")
         print("  live_detection.py start person cup bottle  # Uses EdgeTPU (fast)")
         print("  live_detection.py start 'red backpack'     # Uses YOLO-World (open vocab)")
         print("  live_detection.py start person --force-yolo  # Force YOLO-World")
+        print("  live_detection.py start person cup --segmentation  # Mask overlay (COCO only)")
+        print("  live_detection.py start person --smoothing high  # Extra smooth boxes")
         print("  live_detection.py stop")
         sys.exit(1)
     
@@ -370,6 +636,9 @@ if __name__ == "__main__":
         duration = None
         video_out = None
         force_yolo = False
+        segmentation = False
+        seg_model = None
+        smoothing = "low"
         
         i = 2
         while i < len(sys.argv):
@@ -385,6 +654,15 @@ if __name__ == "__main__":
             elif sys.argv[i] == "--force-yolo":
                 force_yolo = True
                 i += 1
+            elif sys.argv[i] == "--segmentation":
+                segmentation = True
+                i += 1
+            elif sys.argv[i] == "--seg_model" and i + 1 < len(sys.argv):
+                seg_model = sys.argv[i + 1]
+                i += 2
+            elif sys.argv[i] == "--smoothing" and i + 1 < len(sys.argv):
+                smoothing = sys.argv[i + 1]
+                i += 2
             else:
                 objects.append(sys.argv[i])
                 i += 1
@@ -393,7 +671,7 @@ if __name__ == "__main__":
             print("Error: No objects specified to detect")
             sys.exit(1)
         
-        success = run_live_detection(objects, confidence, duration, video_out, force_yolo)
+        success = run_live_detection(objects, confidence, duration, video_out, force_yolo, segmentation, seg_model, smoothing)
         sys.exit(0 if success else 1)
     
     elif action == "stop":

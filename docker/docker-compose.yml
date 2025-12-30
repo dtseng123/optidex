@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  jarvis-db:
+    image: pgvector/pgvector:pg16
+    container_name: jarvis-memory-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jarvis
+      POSTGRES_PASSWORD: jarvis_memory_2024
+      POSTGRES_DB: jarvis_memory
+    ports:
+      - "5432:5432"
+    volumes:
+      - jarvis_pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jarvis -d jarvis_memory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Resource limits for Raspberry Pi
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+volumes:
+  jarvis_pgdata:
+    driver: local
+
